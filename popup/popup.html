@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IMDb Stream Finder</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Stream links</h1>
+      <p class="sub">
+        Placeholders: <code>{imdb}</code> <code>{imdb_raw}</code> <code>{tmdb}</code>
+        <code>{season}</code> <code>{episode}</code> <code>{type}</code>
+      </p>
+
+      <section class="sync-box">
+        <h2>Protection</h2>
+        <label class="toggle-row">
+          <input type="checkbox" id="locker-enabled" checked />
+          <span>Popup + ad locker (network + page)</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="edge-autohide" checked />
+          <span>Auto-hide stream dock (hover right edge)</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" id="auto-update" checked />
+          <span>Auto-update provider list (every 12h)</span>
+        </label>
+      </section>
+
+      <section class="sync-box">
+        <h2>Update providers</h2>
+        <p class="sub">
+          Providers are loaded from your catalog API (MongoDB-backed). Set the remote URL below.
+          Your <code>custom-*</code> links are kept on sync.
+        </p>
+        <label class="remote-label">
+          Optional remote catalog JSON URL
+          <input
+            id="catalog-url"
+            type="text"
+            placeholder="http://127.0.0.1:8787/providers-catalog.json"
+            spellcheck="false"
+          />
+        </label>
+        <div class="sync-actions">
+          <button type="button" id="sync-bundled">Sync bundled catalog</button>
+          <button type="button" id="sync-remote">Sync remote URL</button>
+        </div>
+        <p id="catalog-meta" class="sub"></p>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Movies</h2>
+          <button type="button" id="add-movie">Add link</button>
+        </div>
+        <div id="movie-list" class="list"></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>TV shows</h2>
+          <button type="button" id="add-tv">Add link</button>
+        </div>
+        <div id="tv-list" class="list"></div>
+      </section>
+
+      <footer>
+        <button type="button" id="reset">Reset defaults</button>
+        <button type="button" id="save" class="primary">Save</button>
+      </footer>
+      <p id="status" class="status" hidden></p>
+    </main>
+
+    <script src="../shared/catalog.js"></script>
+    <script src="../shared/defaults.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

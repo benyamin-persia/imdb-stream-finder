@@ -1,0 +1,160 @@
+:root {
+  --bg: #10131a;
+  --panel: #1a2030;
+  --text: #eef1f7;
+  --muted: #9aa3b5;
+  --accent: #e8a838;
+  --border: #2c3448;
+  --danger: #d96666;
+}
+
+.sync-box {
+  background: rgba(232, 168, 56, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.remote-label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sync-box a {
+  color: var(--accent);
+}
+
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 380px;
+  max-height: 560px;
+  overflow: auto;
+  background: radial-gradient(circle at top right, #243049, var(--bg) 55%);
+  color: var(--text);
+  font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+}
+
+main {
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+code {
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #121722;
+  color: var(--text);
+  padding: 7px 8px;
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--border);
+  background: #222a3d;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #111;
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.status {
+  margin: 0;
+  color: var(--accent);
+  font-size: 12px;
+}
