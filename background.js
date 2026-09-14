@@ -1,7 +1,8 @@
 // Background: ad locker rules + playability probes + auto provider-list refresh
 importScripts(
-  "shared/ad-filters.js", // AD_FILTERS + POPUNDER_MAIN_FRAME
-  "shared/catalog.js", // STREAM_PROVIDER_CATALOG + mergeCatalogIntoLists
+  "shared/ad-filters.js",
+  "shared/catalog.js",
+  "shared/providers.local.js", // local catalog (gitignored) — fills STREAM_PROVIDER_CATALOG
   "shared/defaults.js"
 );
 
@@ -80,8 +81,7 @@ async function ensureCatalogAlarm() {
   }
 }
 
-// Continuously refresh provider templates (bundled always; remote if catalogUrl set)
-// Load private catalog file (gitignored) — local seed before MongoDB/API is available
+// Prefer local providers. Optional remote URL only if you set one yourself.
 async function loadPrivateCatalogFile() {
   const candidates = ["providers.private.json", "private/providers-catalog.json"];
   for (const rel of candidates) {
@@ -90,9 +90,7 @@ async function loadPrivateCatalogFile() {
       if (!res.ok) continue;
       const data = await res.json();
       if (catalogHasProviders(data)) return data;
-    } catch (_) {
-      /* missing file is normal when using Atlas-only */
-    }
+    } catch (_) {}
   }
   return null;
 }
@@ -107,42 +105,41 @@ async function refreshProviderCatalog(reason) {
     ]);
     if (stored.autoUpdateProviders === false) return;
 
-    let catalog = STREAM_PROVIDER_CATALOG;
-    const remoteUrl = String(stored.catalogUrl || "").trim();
+    // Drop leftover localhost catalog URL if present (nothing should listen there)
+    let remoteUrl = String(stored.catalogUrl || "").trim();
+    if (/127\.0\.0\.1|localhost/i.test(remoteUrl)) {
+      remoteUrl = "";
+      await chrome.storage.local.remove("catalogUrl");
+    }
+
+    // 1) Bundled local catalog (providers.local.js)
+    let catalog = catalogHasProviders(STREAM_PROVIDER_CATALOG) ? STREAM_PROVIDER_CATALOG : null;
+
+    // 2) Optional remote JSON (only if user set a real URL)
     if (remoteUrl) {
       try {
         const res = await fetch(remoteUrl, { cache: "no-store" });
         if (res.ok) {
           const remote = await res.json();
-          if (catalogHasProviders(remote)) catalog = remote; // remote / DB API wins
+          if (catalogHasProviders(remote)) catalog = remote;
         }
       } catch (err) {
         console.warn("[Stream Finder] remote catalog fetch failed:", err);
       }
     }
 
+    // 3) Private JSON seed files
     if (!catalogHasProviders(catalog)) {
-      const privateCatalog = await loadPrivateCatalogFile(); // seed from gitignored local JSON
-      if (privateCatalog) catalog = privateCatalog;
+      catalog = await loadPrivateCatalogFile();
     }
 
-    if (!catalogHasProviders(catalog)) {
-      // Keep whatever the user already has in chrome.storage (local DB)
-      if ((stored.movieLinks && stored.movieLinks.length) || (stored.tvLinks && stored.tvLinks.length)) {
-        await chrome.storage.local.set({
-          lastCatalogRefresh: Date.now(),
-          lastCatalogRefreshReason: reason
-        });
-        return;
-      }
-      return; // nothing to write yet
-    }
+    if (!catalogHasProviders(catalog)) return;
 
     const merged = mergeCatalogIntoLists(catalog, stored.movieLinks, stored.tvLinks);
     await chrome.storage.local.set({
       movieLinks: merged.movieLinks,
       tvLinks: merged.tvLinks,
-      catalogVersion: merged.version || "private",
+      catalogVersion: merged.version || "local",
       catalogUpdated: merged.updated || null,
       lastCatalogRefresh: Date.now(),
       lastCatalogRefreshReason: reason,

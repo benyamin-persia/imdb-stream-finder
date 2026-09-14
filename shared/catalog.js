@@ -1,14 +1,12 @@
-// Provider catalog helpers. Templates are NOT shipped here — they live in MongoDB Atlas
-// (via catalog-api) or optional private/providers-catalog.json / providers.private.json.
+// Helpers only. Real templates load from gitignored shared/providers.local.js (same folder).
 
-const STREAM_PROVIDER_CATALOG = {
-  version: "remote-only",
+var STREAM_PROVIDER_CATALOG = {
+  version: "empty",
   updated: null,
-  sources: ["mongodb-atlas"],
-  providers: [] // filled at runtime from remote API / private seed file
+  sources: [],
+  providers: []
 };
 
-// Turn catalog entries into the movieLinks / tvLinks arrays the UI stores
 function catalogToLinkLists(catalog) {
   const movieLinks = [];
   const tvLinks = [];
@@ -35,7 +33,6 @@ function catalogToLinkLists(catalog) {
   return { movieLinks, tvLinks, version: catalog.version, updated: catalog.updated };
 }
 
-// Merge remote/private catalog over current lists, keep user custom-* rows
 function mergeCatalogIntoLists(catalog, currentMovies, currentTv) {
   const built = catalogToLinkLists(catalog);
   const keepCustom = (list) => (list || []).filter((l) => String(l.id || "").startsWith("custom-"));
@@ -47,7 +44,6 @@ function mergeCatalogIntoLists(catalog, currentMovies, currentTv) {
   };
 }
 
-// True when a catalog object has at least one usable template
 function catalogHasProviders(catalog) {
   return !!(catalog && Array.isArray(catalog.providers) && catalog.providers.some((p) => p && (p.movie || p.tv)));
 }

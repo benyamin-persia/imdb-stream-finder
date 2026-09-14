@@ -35,11 +35,21 @@
     ]);
     state.movieLinks = mergeLinkLists(stored.movieLinks, STREAM_FINDER_DEFAULTS.movieLinks);
     state.tvLinks = mergeLinkLists(stored.tvLinks, STREAM_FINDER_DEFAULTS.tvLinks);
-    // Persist refreshed catalog URLs (e.g. official 2Embed IMDb) so popup stays in sync
-    await chrome.storage.local.set({
-      movieLinks: state.movieLinks,
-      tvLinks: state.tvLinks
-    });
+    // Only persist when we actually have sources (never write empty over a good list)
+    if (state.movieLinks.length || state.tvLinks.length) {
+      await chrome.storage.local.set({
+        movieLinks: state.movieLinks,
+        tvLinks: state.tvLinks
+      });
+    } else {
+      // Ask background to seed from local catalog, then re-read
+      try {
+        await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
+      } catch (_) {}
+      const again = await chrome.storage.local.get(["movieLinks", "tvLinks"]);
+      state.movieLinks = again.movieLinks || [];
+      state.tvLinks = again.tvLinks || [];
+    }
     state.lockerEnabled = stored.lockerEnabled !== false;
     state.edgeAutoHide = stored.edgeAutoHide !== false;
     syncLockerMain(state.lockerEnabled);

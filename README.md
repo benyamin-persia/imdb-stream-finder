@@ -1,23 +1,23 @@
 # IMDb Stream Finder (Chrome)
 
-Chrome extension that scans the current page for an **IMDb** / **TMDB** id, then fills your own stream-link templates (movie or TV with season/episode). Includes an in-app player, playability checks, toggleable popup/ad locker, and a right-click **Search on IMDb** action for selected text.
+Chrome extension that finds **IMDb** / **TMDB** ids on the current page and builds configurable stream link templates. Supports movies and TV (season + episode), an in-app player, popup/ad locker, and a right-click **Search on IMDb** action.
 
 ## Install (Chrome)
 
 1. Open `chrome://extensions`
 2. Turn on **Developer mode**
 3. Click **Load unpacked**
-4. Select this folder (`imdb-stream-finder` after clone)
+4. Select this folder
 
 ## How it works
 
-1. Open any page that contains an IMDb id (or paste ids in the panel).
-2. The Stream Finder dock appears on the right edge (hover to open).
+1. Visit a page with an IMDb id (or paste ids in the panel).
+2. Hover the right edge to open the stream dock.
 3. Choose **Movie** or **TV**; for TV set season/episode.
-4. Play or open links built from your configured templates.
-5. Highlight text anywhere → right-click → **Search on IMDb**.
+4. Play or open a source. Add custom templates in the popup anytime.
+5. Highlight text → right-click → **Search on IMDb**.
 
-## Placeholders for custom links
+## Placeholders
 
 | Token | Example | Meaning |
 | --- | --- | --- |
@@ -26,36 +26,15 @@ Chrome extension that scans the current page for an **IMDb** / **TMDB** id, then
 | `{tmdb}` | `1084242` | TMDB numeric id |
 | `{season}` | `1` | TV season |
 | `{episode}` | `1` | TV episode |
-| `{type}` | `movie` / `tv` | Media type |
+| `{type}` | `movie` | Media type |
 
-## Provider catalog (private)
+Custom template examples use `https://example.com/...` only in docs — add your own hosts in the popup.
 
-Default provider templates are **not** published in this repository. They live in **MongoDB Atlas** and are served by a small **catalog API** you host (credentials never go in the Chrome extension).
+## Provider list (not on GitHub)
 
-1. Copy `catalog-api/.env.example` → `catalog-api/.env` and set your Atlas URI.
-2. Keep a private catalog file at `private/providers-catalog.json` (gitignored).
-3. Seed Atlas: `cd catalog-api && npm install && npm run seed`
-4. Run API: `npm start` → `http://127.0.0.1:8787/providers-catalog.json`
-5. In the extension popup, set **Remote catalog URL** to that endpoint (or your deployed HTTPS URL) and sync.
+Provider URLs are kept in **local-only** files that are gitignored (not published):
 
-Optional: set `CATALOG_TOKEN` in `.env` and send `Authorization: Bearer …` from your sync client for a locked-down catalog.
+- `shared/providers.local.js`
+- `providers.private.json`
 
-### Security model
-
-| Layer | Role |
-| --- | --- |
-| **MongoDB Atlas** | Stores provider documents only. Use Network Access IP allowlist + least-privilege DB user. |
-| **Catalog API** (`catalog-api/`) | Only service that may use `MONGODB_URI`. Deploy on Railway, Render, Fly.io, Cloudflare Workers+proxy, etc. |
-| **Chrome extension** | Fetches HTTPS catalog JSON only. **Never** embed Atlas passwords in the extension. |
-
-Atlas is the database, not the “app portal.” The extension stays a Chrome add-on; the API is the only bridge to MongoDB.
-
-## Privacy / secrets
-
-Do not commit:
-
-- `atlas-credentials*.env`, `catalog-api/.env`
-- `private/providers-catalog.json`
-- any MongoDB passwords
-
-If a password was ever pasted into chat or a public file, **rotate it in Atlas** immediately.
+The extension loads those on your machine. GitHub only has an empty catalog stub.

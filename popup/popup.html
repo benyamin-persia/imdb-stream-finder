@@ -33,20 +33,20 @@
       <section class="sync-box">
         <h2>Update providers</h2>
         <p class="sub">
-          Providers are loaded from your catalog API (MongoDB-backed). Set the remote URL below.
-          Your <code>custom-*</code> links are kept on sync.
+          Sources load from your local catalog on this machine. Optional: paste a remote JSON URL.
+          Your <code>custom-*</code> links are kept.
         </p>
         <label class="remote-label">
           Optional remote catalog JSON URL
           <input
             id="catalog-url"
             type="text"
-            placeholder="http://127.0.0.1:8787/providers-catalog.json"
+            placeholder="https://example.com/catalog.json"
             spellcheck="false"
           />
         </label>
         <div class="sync-actions">
-          <button type="button" id="sync-bundled">Refresh from API / private file</button>
+          <button type="button" id="sync-bundled">Reload local sources</button>
           <button type="button" id="sync-remote">Sync remote URL</button>
         </div>
         <p id="catalog-meta" class="sub"></p>
@@ -76,6 +76,7 @@
     </main>
 
     <script src="../shared/catalog.js"></script>
+    <script src="../shared/providers.local.js"></script>
     <script src="../shared/defaults.js"></script>
     <script src="popup.js"></script>
   </body>

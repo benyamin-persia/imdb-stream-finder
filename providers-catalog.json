@@ -1,6 +1,1 @@
-{
-  "version": "remote-only",
-  "updated": "2026-03-14",
-  "sources": ["mongodb-atlas"],
-  "providers": []
-}
+{"version":"empty","providers":[]}

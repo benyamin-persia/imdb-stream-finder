@@ -58,22 +58,30 @@
   });
 
   document.getElementById("sync-bundled").addEventListener("click", async () => {
-    // Ask background to pull remote Atlas API and/or private seed into chrome.storage
-    try {
-      await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
-    } catch (_) {}
-    const stored = await chrome.storage.local.get(["movieLinks", "tvLinks", "catalogVersion", "catalogUpdated"]);
-    movieLinks = stored.movieLinks || [];
-    tvLinks = stored.tvLinks || [];
+    syncFromDom();
+    if (!catalogHasProviders(STREAM_PROVIDER_CATALOG)) {
+      try {
+        await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
+      } catch (_) {}
+      const stored = await chrome.storage.local.get(["movieLinks", "tvLinks", "catalogVersion"]);
+      movieLinks = stored.movieLinks || [];
+      tvLinks = stored.tvLinks || [];
+      render();
+      flash(movieLinks.length ? `Loaded ${movieLinks.length} movie / ${tvLinks.length} TV` : "No local sources found");
+      return;
+    }
+    const merged = mergeCatalogIntoLists(STREAM_PROVIDER_CATALOG, movieLinks, tvLinks);
+    movieLinks = merged.movieLinks;
+    tvLinks = merged.tvLinks;
     render();
-    flash(
-      movieLinks.length || tvLinks.length
-        ? `Loaded ${movieLinks.length} movie / ${tvLinks.length} TV from catalog DB`
-        : "No providers yet — set remote catalog URL or seed Atlas"
-    );
-    catalogMeta.textContent = stored.catalogVersion
-      ? `Catalog v${stored.catalogVersion}` + (stored.catalogUpdated ? ` (${stored.catalogUpdated})` : "")
-      : "";
+    await save(false);
+    await chrome.storage.local.set({
+      catalogVersion: merged.version,
+      catalogUpdated: merged.updated,
+      catalogUrl: "" // clear dead localhost Atlas URL if any
+    });
+    flash(`Reloaded local sources (${merged.movieLinks.length} movie / ${merged.tvLinks.length} TV)`);
+    showCatalogMeta(STREAM_PROVIDER_CATALOG);
   });
 
   document.getElementById("sync-remote").addEventListener("click", async () => {

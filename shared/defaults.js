@@ -1,16 +1,14 @@
-// Shared defaults — loaded by both the content script and the popup.
-// Provider URLs come from chrome.storage / private JSON / remote catalog — not hardcoded here.
+// Shared defaults — content script + popup. Uses STREAM_PROVIDER_CATALOG (filled by providers.local.js).
 
 function getDefaultLinkLists() {
-  if (typeof STREAM_PROVIDER_CATALOG !== "undefined" && catalogHasProviders?.(STREAM_PROVIDER_CATALOG)) {
+  if (typeof STREAM_PROVIDER_CATALOG !== "undefined" && catalogHasProviders(STREAM_PROVIDER_CATALOG)) {
     return catalogToLinkLists(STREAM_PROVIDER_CATALOG);
   }
-  return { movieLinks: [], tvLinks: [] }; // empty until private/remote catalog loads
+  return { movieLinks: [], tvLinks: [] };
 }
 
 const STREAM_FINDER_DEFAULTS = getDefaultLinkLists();
 
-// Build a final URL from a template by replacing known placeholders
 function buildStreamUrl(template, vars) {
   return template
     .replaceAll("{imdb}", vars.imdb || "")
@@ -18,10 +16,9 @@ function buildStreamUrl(template, vars) {
     .replaceAll("{tmdb}", vars.tmdb || "")
     .replaceAll("{season}", String(vars.season ?? 1))
     .replaceAll("{episode}", String(vars.episode ?? 1))
-    .replaceAll("{type}", vars.type || "movie"); // movie | tv for sites using /{type}/
+    .replaceAll("{type}", vars.type || "movie");
 }
 
-// True when a template still has an empty required id after substitution
 function linkNeedsMissingId(template, vars) {
   const needsTmdb = template.includes("{tmdb}") && !vars.tmdb;
   const needsImdb =
@@ -29,7 +26,6 @@ function linkNeedsMissingId(template, vars) {
   return needsTmdb || needsImdb;
 }
 
-// Refresh catalog URLs by id; keep enabled flags + custom-* rows
 function mergeLinkLists(saved, defaults) {
   if (!saved || !saved.length) return defaults.slice();
   const savedById = new Map(saved.map((l) => [l.id, l]));
@@ -38,9 +34,9 @@ function mergeLinkLists(saved, defaults) {
     if (!prev) return { ...d };
     return {
       ...d,
-      enabled: prev.enabled !== false, // keep user on/off, refresh URL/name from catalog
+      enabled: prev.enabled !== false,
       name: d.name || prev.name,
-      url: d.url // always take latest catalog template
+      url: d.url
     };
   });
   for (const l of saved) {
