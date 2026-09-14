@@ -58,18 +58,22 @@
   });
 
   document.getElementById("sync-bundled").addEventListener("click", async () => {
-    syncFromDom();
-    const merged = mergeCatalogIntoLists(STREAM_PROVIDER_CATALOG, movieLinks, tvLinks);
-    movieLinks = merged.movieLinks;
-    tvLinks = merged.tvLinks;
+    // Ask background to pull remote Atlas API and/or private seed into chrome.storage
+    try {
+      await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
+    } catch (_) {}
+    const stored = await chrome.storage.local.get(["movieLinks", "tvLinks", "catalogVersion", "catalogUpdated"]);
+    movieLinks = stored.movieLinks || [];
+    tvLinks = stored.tvLinks || [];
     render();
-    await save(false);
-    await chrome.storage.local.set({
-      catalogVersion: merged.version,
-      catalogUpdated: merged.updated
-    });
-    flash("Synced bundled catalog (" + merged.movieLinks.length + " movie / " + merged.tvLinks.length + " TV)");
-    showCatalogMeta(STREAM_PROVIDER_CATALOG);
+    flash(
+      movieLinks.length || tvLinks.length
+        ? `Loaded ${movieLinks.length} movie / ${tvLinks.length} TV from catalog DB`
+        : "No providers yet — set remote catalog URL or seed Atlas"
+    );
+    catalogMeta.textContent = stored.catalogVersion
+      ? `Catalog v${stored.catalogVersion}` + (stored.catalogUpdated ? ` (${stored.catalogUpdated})` : "")
+      : "";
   });
 
   document.getElementById("sync-remote").addEventListener("click", async () => {
@@ -120,7 +124,7 @@
     const defaults = getDefaultLinkLists();
     movieLinks = mergeLinkLists(stored.movieLinks, defaults.movieLinks);
     tvLinks = mergeLinkLists(stored.tvLinks, defaults.tvLinks);
-    catalogUrlInput.value = stored.catalogUrl || "http://127.0.0.1:8787/providers-catalog.json";
+    catalogUrlInput.value = stored.catalogUrl || "";
     lockerEnabled.checked = stored.lockerEnabled !== false;
     edgeAutohide.checked = stored.edgeAutoHide !== false;
     autoUpdate.checked = stored.autoUpdateProviders !== false;

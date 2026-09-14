@@ -9,7 +9,6 @@ const AD_RULE_BASE = 1000;
 const POP_RULE_BASE = 1800;
 const CATALOG_ALARM = "isf-catalog-refresh";
 const CATALOG_PERIOD_MINUTES = 720; // every 12 hours
-const DEFAULT_CATALOG_URL = "http://127.0.0.1:8787/providers-catalog.json"; // local catalog-api → Atlas
 
 const OUR_RULE_IDS = [
   ...AD_FILTERS.map((_, i) => AD_RULE_BASE + i),
@@ -82,6 +81,22 @@ async function ensureCatalogAlarm() {
 }
 
 // Continuously refresh provider templates (bundled always; remote if catalogUrl set)
+// Load private catalog file (gitignored) — local seed before MongoDB/API is available
+async function loadPrivateCatalogFile() {
+  const candidates = ["providers.private.json", "private/providers-catalog.json"];
+  for (const rel of candidates) {
+    try {
+      const res = await fetch(chrome.runtime.getURL(rel), { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (catalogHasProviders(data)) return data;
+    } catch (_) {
+      /* missing file is normal when using Atlas-only */
+    }
+  }
+  return null;
+}
+
 async function refreshProviderCatalog(reason) {
   try {
     const stored = await chrome.storage.local.get([
@@ -93,29 +108,42 @@ async function refreshProviderCatalog(reason) {
     if (stored.autoUpdateProviders === false) return;
 
     let catalog = STREAM_PROVIDER_CATALOG;
-    // Prefer stored URL, else local catalog-api (MongoDB); never talk to Atlas from the extension
-    const remoteUrl = String(stored.catalogUrl || DEFAULT_CATALOG_URL).trim();
+    const remoteUrl = String(stored.catalogUrl || "").trim();
     if (remoteUrl) {
       try {
         const res = await fetch(remoteUrl, { cache: "no-store" });
         if (res.ok) {
           const remote = await res.json();
-          if (remote && Array.isArray(remote.providers) && remote.providers.length) {
-            catalog = remote;
-          }
+          if (catalogHasProviders(remote)) catalog = remote; // remote / DB API wins
         }
       } catch (err) {
         console.warn("[Stream Finder] remote catalog fetch failed:", err);
       }
     }
 
+    if (!catalogHasProviders(catalog)) {
+      const privateCatalog = await loadPrivateCatalogFile(); // seed from gitignored local JSON
+      if (privateCatalog) catalog = privateCatalog;
+    }
+
+    if (!catalogHasProviders(catalog)) {
+      // Keep whatever the user already has in chrome.storage (local DB)
+      if ((stored.movieLinks && stored.movieLinks.length) || (stored.tvLinks && stored.tvLinks.length)) {
+        await chrome.storage.local.set({
+          lastCatalogRefresh: Date.now(),
+          lastCatalogRefreshReason: reason
+        });
+        return;
+      }
+      return; // nothing to write yet
+    }
+
     const merged = mergeCatalogIntoLists(catalog, stored.movieLinks, stored.tvLinks);
     await chrome.storage.local.set({
       movieLinks: merged.movieLinks,
       tvLinks: merged.tvLinks,
-      catalogUrl: stored.catalogUrl || DEFAULT_CATALOG_URL,
-      catalogVersion: merged.version || STREAM_PROVIDER_CATALOG.version,
-      catalogUpdated: merged.updated || STREAM_PROVIDER_CATALOG.updated,
+      catalogVersion: merged.version || "private",
+      catalogUpdated: merged.updated || null,
       lastCatalogRefresh: Date.now(),
       lastCatalogRefreshReason: reason,
       autoUpdateProviders: true
@@ -267,7 +295,7 @@ async function probeEmbed(url) {
     const finalUrl = res.url;
     const text = (await res.text()).slice(0, 180000);
     const lower = text.toLowerCase();
-    const verdict = classifyEmbedHtml(status, lower, null);
+    const verdict = classifyEmbedHtml(status, lower);
     return { ok: true, status, finalUrl, ...verdict };
   } catch (err) {
     return {
@@ -281,7 +309,7 @@ async function probeEmbed(url) {
   }
 }
 
-function classifyEmbedHtml(status, lower, apiHint) {
+function classifyEmbedHtml(status, lower) {
   if (status === 404 || status === 410) {
     return pack("fail", false, "high", 0, { dead: true });
   }
@@ -324,16 +352,10 @@ function classifyEmbedHtml(status, lower, apiHint) {
     return pack("fail", false, "high", 0, { dead: true });
   }
   if (waf && !strongPlay) {
-    return pack("maybe", null, "low", apiHint?.exists ? 4 : 2, { blocked: true });
+    return pack("maybe", null, "low", 2, { blocked: true });
   }
   if (strongPlay) {
-    return pack("ok", true, "high", 8 + (apiHint?.exists ? 1 : 0), { hasPlayer: true });
-  }
-  if (apiHint?.exists && playerShell) {
-    return pack("maybe", null, "medium", 5, { hasPlayer: true, source: "provider-api+html" });
-  }
-  if (apiHint?.exists) {
-    return pack("maybe", null, "medium", 4, { source: "provider-api" });
+    return pack("ok", true, "high", 8, { hasPlayer: true });
   }
   if (playerShell) {
     return pack("maybe", null, "low", 3, { hasPlayer: true });

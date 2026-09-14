@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "IMDb Stream Finder",
   "version": "1.7.0",
-  "description": "Finds IMDb/TMDB IDs, in-app player, catalog sync, popup/ad locker.",
+  "description": "Finds IMDb/TMDB IDs, tests playable embeds in-app, and blocks popups/ads.",
   "permissions": [
     "storage",
     "activeTab",

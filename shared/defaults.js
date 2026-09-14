@@ -1,15 +1,11 @@
-// Shared defaults — loaded by both the content script and the popup
-// Built from STREAM_PROVIDER_CATALOG when catalog.js is present.
+// Shared defaults — loaded by both the content script and the popup.
+// Provider URLs come from chrome.storage / private JSON / remote catalog — not hardcoded here.
 
 function getDefaultLinkLists() {
-  if (typeof STREAM_PROVIDER_CATALOG !== "undefined") {
+  if (typeof STREAM_PROVIDER_CATALOG !== "undefined" && catalogHasProviders?.(STREAM_PROVIDER_CATALOG)) {
     return catalogToLinkLists(STREAM_PROVIDER_CATALOG);
   }
-  // Empty fallback if catalog failed to load — real list comes from MongoDB via catalog-api
-  return {
-    movieLinks: [],
-    tvLinks: []
-  };
+  return { movieLinks: [], tvLinks: [] }; // empty until private/remote catalog loads
 }
 
 const STREAM_FINDER_DEFAULTS = getDefaultLinkLists();

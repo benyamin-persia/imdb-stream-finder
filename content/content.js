@@ -552,16 +552,17 @@
       .filter((c) => !c.missing && c.href);
   }
 
-  function providerPriority(id, href, index) {
-    // Prefer earlier catalog order (from Atlas), not hardcoded site names
-    return Math.max(0, 80 - (Number(index) || 0));
+  function providerPriority(id) {
+    // Prefer earlier entries in the user's saved list (catalog order)
+    const idx = state.queue.findIndex((q) => q.id === id);
+    return idx >= 0 ? Math.max(0, 100 - idx) : 10;
   }
 
-  function rankScore(c, index) {
+  function rankScore(c) {
     const r = state.probeResults[c.href] || {};
     const label = r.label || (r.playable === true ? "ok" : r.playable === false ? "fail" : "maybe");
     const base = label === "ok" ? 1000 : label === "fail" ? -1000 : 100;
-    return base + (r.score || 0) + providerPriority(c.id, c.href, index);
+    return base + (r.score || 0) + providerPriority(c.id);
   }
 
   async function testAllAndPlay() {
@@ -600,19 +601,11 @@
 
       const queue = candidates
         .filter((c) => badgeLabel(state.probeResults[c.href]) !== "FAIL")
-        .sort(
-          (a, b) =>
-            rankScore(b, candidates.indexOf(b)) - rankScore(a, candidates.indexOf(a))
-        );
+        .sort((a, b) => rankScore(b) - rankScore(a));
 
       state.playQueue = queue.length
         ? queue
-        : candidates
-            .slice()
-            .sort(
-              (a, b) =>
-                rankScore(b, candidates.indexOf(b)) - rankScore(a, candidates.indexOf(a))
-            );
+        : candidates.slice().sort((a, b) => rankScore(b) - rankScore(a));
       state.playIndex = 0;
 
       const okCount = candidates.filter((c) => badgeLabel(state.probeResults[c.href]) === "OK").length;
@@ -633,9 +626,7 @@
 
   function shiftSource(delta) {
     if (!state.playQueue.length) {
-      state.playQueue = getCandidateLinks().sort(
-        (a, b) => rankScore(b, 0) - rankScore(a, 0)
-      );
+      state.playQueue = getCandidateLinks().sort((a, b) => rankScore(b) - rankScore(a));
       // start near currently playing if possible
       if (state.nowPlayingHref) {
         const idx = state.playQueue.findIndex((c) => c.href === state.nowPlayingHref);

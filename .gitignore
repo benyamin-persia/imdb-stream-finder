@@ -12,6 +12,7 @@ catalog-api/.env
 atlas-credentials*.env
 atlas-credentials*
 private/
+providers.private.json
 *.pem
 *.crx
 test-results.json

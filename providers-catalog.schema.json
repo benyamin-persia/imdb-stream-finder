@@ -1,0 +1,13 @@
+{
+  "version": "schema",
+  "updated": null,
+  "providers": [
+    {
+      "id": "example",
+      "name": "Example",
+      "movie": "https://example.com/movie/{tmdb}",
+      "tv": "https://example.com/tv/{tmdb}/{season}/{episode}",
+      "enabled": false
+    }
+  ]
+}

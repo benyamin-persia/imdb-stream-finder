@@ -3,41 +3,8 @@
   const PANEL_ID = "imdb-stream-finder-panel";
   let enabled = true;
 
-  const META_ALLOW =
-    /(^|\.)(imdb\.com|themoviedb\.org|wikipedia\.org|youtube\.com|youtu\.be)$/i; // identity / docs sites only
-
-  let catalogAllow = null; // hosts built from synced movie/tv link templates in storage
-
-  function rebuildAllowFromLinks(movieLinks, tvLinks) {
-    const hosts = new Set();
-    for (const list of [movieLinks || [], tvLinks || []]) {
-      for (const link of list) {
-        try {
-          const u = new URL(String(link.url || "").replace(/\{[^}]+\}/g, "x")); // fill placeholders for parse
-          if (u.hostname) hosts.add(u.hostname.toLowerCase());
-        } catch (_) {}
-      }
-    }
-    const escaped = [...hosts].map((h) => h.replace(/\./g, "\\."));
-    catalogAllow = escaped.length
-      ? new RegExp(`^(?:${escaped.join("|")})$`, "i")
-      : null;
-  }
-
-  function hostAllowed(host) {
-    if (!host) return false;
-    if (META_ALLOW.test(host)) return true;
-    if (catalogAllow && catalogAllow.test(host)) return true;
-    // also allow subdomains of catalog hosts
-    if (catalogAllow) {
-      const parts = host.split(".");
-      for (let i = 1; i < parts.length - 1; i++) {
-        const parent = parts.slice(i).join(".");
-        if (catalogAllow.test(parent)) return true;
-      }
-    }
-    return false;
-  }
+  // Only well-known reference sites; embed hosts come from user catalog, not hardcoded here
+  const ALLOW_HOST = /(^|\.)(imdb\.com|themoviedb\.org|wikipedia\.org|youtube\.com|youtu\.be)/i;
 
   function publish() {
     try {
@@ -51,21 +18,14 @@
     } catch (_) {}
   }
 
-  chrome.storage.local.get(["lockerEnabled", "movieLinks", "tvLinks"], (stored) => {
+  chrome.storage.local.get(["lockerEnabled"], (stored) => {
     enabled = stored.lockerEnabled !== false;
-    rebuildAllowFromLinks(stored.movieLinks, stored.tvLinks);
     publish();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    if (changes.lockerEnabled) {
+    if (area === "local" && changes.lockerEnabled) {
       enabled = changes.lockerEnabled.newValue !== false;
       publish();
-    }
-    if (changes.movieLinks || changes.tvLinks) {
-      chrome.storage.local.get(["movieLinks", "tvLinks"], (stored) => {
-        rebuildAllowFromLinks(stored.movieLinks, stored.tvLinks);
-      });
     }
   });
 
@@ -117,7 +77,7 @@
 
       // Inside embed iframes: block almost all blank opens
       const inFrame = window.top !== window;
-      if (inFrame && !hostAllowed(host)) {
+      if (inFrame && !ALLOW_HOST.test(host)) {
         e.preventDefault();
         e.stopPropagation();
         return;
