@@ -1,12 +1,30 @@
 #imdb-stream-finder-edge {
   position: fixed;
-  top: 0;
-  right: 0;
-  width: 10px;
-  height: 100vh;
+  top: 12px;
+  left: 12px;
+  width: 44px;
+  height: 44px;
   z-index: 2147483645;
-  background: linear-gradient(90deg, transparent, rgba(232, 168, 56, 0.35));
+  border-radius: 12px;
+  border: 1px solid rgba(232, 168, 56, 0.55);
+  background: linear-gradient(145deg, #2a3144 0%, #151922 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #e8a838;
+  font: 700 11px/1 "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+#imdb-stream-finder-edge::after {
+  content: "SF";
+}
+
+#imdb-stream-finder-edge:hover {
+  border-color: #e8a838;
+  transform: scale(1.05);
 }
 
 #imdb-stream-finder-panel {
@@ -20,7 +38,7 @@
   --isf-fail: #e45d5d;
   position: fixed;
   top: 0;
-  right: 0;
+  left: 0;
   bottom: 0;
   z-index: 2147483646;
   width: min(380px, 94vw);
@@ -32,9 +50,9 @@
   color: var(--isf-text);
   font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
   background: linear-gradient(165deg, #1a1f2e 0%, #10131a 55%, #0c0e14 100%);
-  border-left: 1px solid var(--isf-border);
-  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
-  transform: translateX(105%);
+  border-right: 1px solid var(--isf-border);
+  box-shadow: 16px 0 48px rgba(0, 0, 0, 0.45);
+  transform: translateX(-105%); /* hidden off the left */
   transition: transform 0.22s ease;
 }
 
@@ -44,7 +62,7 @@
 }
 
 #imdb-stream-finder-panel.isf-hidden:not(.isf-pinned) {
-  transform: translateX(105%);
+  transform: translateX(-105%);
 }
 
 #imdb-stream-finder-panel * {

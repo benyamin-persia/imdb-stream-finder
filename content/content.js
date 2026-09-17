@@ -1,6 +1,6 @@
 (() => {
   const PANEL_ID = "imdb-stream-finder-panel"; // unique root id so we never inject twice
-  const EDGE_ID = "imdb-stream-finder-edge"; // thin right-edge hover strip
+  const EDGE_ID = "imdb-stream-finder-edge"; // top-left corner tab (keeps right scrollbar free)
   const IMDB_RE = /\btt\d{7,8}\b/gi;
   const TMDB_PATH_RE = /(?:themoviedb\.org|tmdb\.org)\/(movie|tv)\/(\d+)/i;
   const TMDB_QUERY_RE = /[?&](?:tmdb|tmdb_id|tmdbId)=(\d+)/i;
@@ -248,7 +248,7 @@
 
     const edge = document.createElement("div");
     edge.id = EDGE_ID;
-    edge.title = "Stream Finder — hover to open";
+    edge.title = "Stream Finder — hover top-left to open";
     document.documentElement.appendChild(edge);
 
     const panel = document.createElement("aside");
@@ -328,7 +328,7 @@
       state.edgeAutoHide = !state.edgeAutoHide;
       await chrome.storage.local.set({ edgeAutoHide: state.edgeAutoHide });
       applyEdgeMode();
-      setStatus(state.edgeAutoHide ? "Auto-hide on (hover right edge)" : "Pinned open");
+      setStatus(state.edgeAutoHide ? "Auto-hide on (hover top-left)" : "Pinned open");
     });
     panel.querySelector(".isf-player-close").addEventListener("click", () => closePlayer());
     panel.querySelector(".isf-fs-btn").addEventListener("click", () => togglePlayerFullscreen());
@@ -383,8 +383,9 @@
       });
     });
 
-    // Right-edge hover opens; leave hides (unless pinned)
+    // Top-left tab opens; leave hides (unless pinned) — right edge stays free for page scrollbar
     edge.addEventListener("mouseenter", () => showPanel());
+    edge.addEventListener("click", () => showPanel()); // also click for touchpads / stubborn hover
     panel.addEventListener("mouseenter", () => {
       clearTimeout(hideTimer);
     });

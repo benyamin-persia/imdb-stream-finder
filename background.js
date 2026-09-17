@@ -2,7 +2,7 @@
 importScripts(
   "shared/ad-filters.js",
   "shared/catalog.js",
-  "shared/providers.local.js", // local catalog (gitignored) — fills STREAM_PROVIDER_CATALOG
+  "shared/providers.pack.js", // packed catalog so installs work without private files
   "shared/defaults.js"
 );
 

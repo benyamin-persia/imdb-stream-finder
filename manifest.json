@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IMDb Stream Finder",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Finds IMDb/TMDB IDs, tests playable embeds in-app, and blocks popups/ads.",
   "permissions": [
     "storage",
@@ -47,7 +47,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["shared/catalog.js", "shared/providers.local.js", "shared/defaults.js", "content/content.js"],
+      "js": ["shared/catalog.js", "shared/providers.pack.js", "shared/defaults.js", "content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle",
       "all_frames": false

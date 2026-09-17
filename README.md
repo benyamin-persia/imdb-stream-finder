@@ -9,10 +9,12 @@ Chrome extension that finds **IMDb** / **TMDB** ids on the current page and buil
 3. Click **Load unpacked**
 4. Select this folder
 
+Sources are included — open any IMDb title page and use the **SF** tab in the **top-left** corner.
+
 ## How it works
 
 1. Visit a page with an IMDb id (or paste ids in the panel).
-2. Hover the right edge to open the stream dock.
+2. Hover / click the **SF** button in the **top-left** (right edge stays free for the page scrollbar).
 3. Choose **Movie** or **TV**; for TV set season/episode.
 4. Play or open a source. Add custom templates in the popup anytime.
 5. Highlight text → right-click → **Search on IMDb**.
@@ -28,13 +30,4 @@ Chrome extension that finds **IMDb** / **TMDB** ids on the current page and buil
 | `{episode}` | `1` | TV episode |
 | `{type}` | `movie` | Media type |
 
-Custom template examples use `https://example.com/...` only in docs — add your own hosts in the popup.
-
-## Provider list (not on GitHub)
-
-Provider URLs are kept in **local-only** files that are gitignored (not published):
-
-- `shared/providers.local.js`
-- `providers.private.json`
-
-The extension loads those on your machine. GitHub only has an empty catalog stub.
+Add your own templates in the popup with those tokens (e.g. `https://example.com/watch/{imdb}`).
