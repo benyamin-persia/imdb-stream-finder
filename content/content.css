@@ -191,6 +191,7 @@
 }
 
 .isf-fs-btn,
+.isf-cast-btn,
 .isf-player-close {
   border: 1px solid var(--isf-border);
   background: #222a3d;
@@ -307,10 +308,46 @@
 }
 
 .isf-ids,
-.isf-tv-controls {
+.isf-tv-controls,
+.isf-title-search {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.isf-title-search {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.isf-title-search label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--isf-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.isf-title-search input {
+  width: 100%;
+  border: 1px solid var(--isf-border);
+  border-radius: 8px;
+  background: var(--isf-panel);
+  color: var(--isf-text);
+  padding: 7px 8px;
+  font: inherit;
+}
+
+.isf-lookup-title {
+  border: 1px solid var(--isf-border);
+  background: #222a3d;
+  color: var(--isf-text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+  height: 34px;
 }
 
 .isf-ids label,

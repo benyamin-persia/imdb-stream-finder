@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cast — IMDb Stream Finder</title>
+    <link rel="stylesheet" href="cast.css" />
+  </head>
+  <body>
+    <header class="bar" id="bar">
+      <div class="bar-left">
+        <strong>Cast to TV</strong>
+        <span id="title" class="title">Stream</span>
+      </div>
+      <ol class="steps">
+        <li>Click the <em>Cast</em> icon in Chrome (toolbar or ⋮ menu)</li>
+        <li>Choose your Chromecast / TV</li>
+        <li>Select <strong>Cast tab</strong> (this tab)</li>
+      </ol>
+      <div class="bar-actions">
+        <button type="button" id="hide-ui" title="Hide this bar for a cleaner cast">Hide UI</button>
+        <button type="button" id="fs" title="Fullscreen this page">Fullscreen</button>
+      </div>
+    </header>
+    <button type="button" id="show-ui" class="show-ui" hidden title="Show cast tips">Cast tips</button>
+    <iframe id="player" title="Cast player" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="origin"></iframe>
+    <p id="err" class="err" hidden>No stream URL — play a source in Stream Finder first, then tap Cast.</p>
+    <script src="cast.js"></script>
+  </body>
+</html>

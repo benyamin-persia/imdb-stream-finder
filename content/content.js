@@ -19,7 +19,8 @@
     probeResults: {}, // href -> probe verdict
     playQueue: [], // ranked candidates for Next source
     playIndex: -1,
-    nowPlayingHref: null
+    nowPlayingHref: null,
+    pendingTitle: null // highlighted title the user wants to look up
   };
 
   let hideTimer = null;
@@ -56,10 +57,10 @@
 
     scanPage();
     injectChrome();
-    if (!state.imdb && !state.tmdb) hidePanelSoon(0);
-
     await enrichIds();
+    applyChromeVisibility(); // only show SF when IMDb/TMDB found (or later via highlight)
     renderLinks();
+    bindTitleSelection(); // highlight a title → reveal Stream Finder
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
@@ -72,7 +73,7 @@
       }
       if (changes.edgeAutoHide) {
         state.edgeAutoHide = changes.edgeAutoHide.newValue !== false;
-        applyEdgeMode();
+        applyChromeVisibility();
       }
       renderLinks();
     });
@@ -84,9 +85,7 @@
 
   function scanPage() {
     const seriesImdb = findSeriesImdbOnPage();
-    const pageImdb =
-      findFirstImdb(location.href) ||
-      findFirstImdb(document.documentElement.innerHTML.slice(0, 400000));
+    const pageImdb = findPageImdb(); // careful scan — avoid random tt hits in scripts
     state.imdb = (seriesImdb || pageImdb || "").toLowerCase() || null;
 
     const tmdbHit = findTmdbOnPage();
@@ -120,6 +119,37 @@
     }
   }
 
+  // Prefer URL / meta / links — full HTML scan only on IMDb/TMDB hosts
+  function findPageImdb() {
+    const fromUrl = findFirstImdb(location.href);
+    if (fromUrl) return fromUrl;
+
+    const canon = document.querySelector('link[rel="canonical"]')?.href || "";
+    const og = document.querySelector('meta[property="og:url"]')?.content || "";
+    const fromMeta = findFirstImdb(canon) || findFirstImdb(og);
+    if (fromMeta) return fromMeta;
+
+    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const id = findFirstImdb(script.textContent || "");
+        if (id) return id;
+      } catch (_) {}
+    }
+
+    const titleLink =
+      document.querySelector('a[href*="imdb.com/title/tt"]') ||
+      document.querySelector('a[href*="/title/tt"]');
+    if (titleLink) {
+      const id = findFirstImdb(titleLink.getAttribute("href") || "");
+      if (id) return id;
+    }
+
+    if (/imdb\.com|themoviedb\.org|tmdb\.org/i.test(location.hostname)) {
+      return findFirstImdb(document.documentElement.innerHTML.slice(0, 400000));
+    }
+    return null;
+  }
+
   function findFirstImdb(text) {
     const m = String(text || "").match(IMDB_RE);
     return m ? m[0] : null;
@@ -146,11 +176,31 @@
   }
 
   function findTmdbOnPage() {
-    const html = document.documentElement.innerHTML.slice(0, 400000);
-    const path = html.match(TMDB_PATH_RE) || location.href.match(TMDB_PATH_RE);
-    if (path) return { kind: path[1].toLowerCase(), id: path[2] };
-    const q = (location.href + "\n" + html).match(TMDB_QUERY_RE);
-    if (q) return { kind: null, id: q[1] };
+    // URL / meta first — don't treat random scripts as a TMDB hit on every site
+    const fromUrl = location.href.match(TMDB_PATH_RE) || location.href.match(TMDB_QUERY_RE);
+    if (fromUrl) {
+      if (fromUrl[2]) return { kind: fromUrl[1].toLowerCase(), id: fromUrl[2] };
+      return { kind: null, id: fromUrl[1] };
+    }
+    const canon = document.querySelector('link[rel="canonical"]')?.href || "";
+    const og = document.querySelector('meta[property="og:url"]')?.content || "";
+    const metaHit = (canon + "\n" + og).match(TMDB_PATH_RE);
+    if (metaHit) return { kind: metaHit[1].toLowerCase(), id: metaHit[2] };
+
+    const tmdbLink = document.querySelector('a[href*="themoviedb.org/"], a[href*="tmdb.org/"]');
+    if (tmdbLink) {
+      const href = tmdbLink.getAttribute("href") || "";
+      const path = href.match(TMDB_PATH_RE);
+      if (path) return { kind: path[1].toLowerCase(), id: path[2] };
+    }
+
+    if (/imdb\.com|themoviedb\.org|tmdb\.org/i.test(location.hostname)) {
+      const html = document.documentElement.innerHTML.slice(0, 400000);
+      const path = html.match(TMDB_PATH_RE);
+      if (path) return { kind: path[1].toLowerCase(), id: path[2] };
+      const q = html.match(TMDB_QUERY_RE);
+      if (q) return { kind: null, id: q[1] };
+    }
     return null;
   }
 
@@ -268,6 +318,7 @@
             <span class="isf-player-title">Nothing playing</span>
           </div>
           <div class="isf-player-bar-actions">
+            <button type="button" class="isf-cast-btn" title="Cast to Chromecast / TV">📡</button>
             <button type="button" class="isf-fs-btn" title="Fullscreen">⛶</button>
             <button type="button" class="isf-player-close" title="Close">×</button>
           </div>
@@ -291,6 +342,10 @@
           <label>IMDb <input type="text" class="isf-imdb" placeholder="tt0000000" spellcheck="false" /></label>
           <label>TMDB <input type="text" class="isf-tmdb" placeholder="12345" spellcheck="false" /></label>
         </div>
+        <div class="isf-title-search">
+          <label>Title <input type="text" class="isf-title-query" placeholder="Highlight a title or type one" spellcheck="false" /></label>
+          <button type="button" class="isf-lookup-title">Lookup</button>
+        </div>
         <div class="isf-type">
           <button type="button" data-type="movie" class="isf-type-btn">Movie</button>
           <button type="button" data-type="tv" class="isf-type-btn">TV</button>
@@ -313,12 +368,14 @@
 
     const imdbInput = panel.querySelector(".isf-imdb");
     const tmdbInput = panel.querySelector(".isf-tmdb");
+    const titleInput = panel.querySelector(".isf-title-query");
     const seasonInput = panel.querySelector(".isf-season");
     const episodeInput = panel.querySelector(".isf-episode");
     const lockerToggle = panel.querySelector(".isf-locker-toggle");
 
     imdbInput.value = state.imdb || "";
     tmdbInput.value = state.tmdb || "";
+    titleInput.value = state.pendingTitle || "";
     seasonInput.value = state.season;
     episodeInput.value = state.episode;
     lockerToggle.checked = state.lockerEnabled;
@@ -327,10 +384,11 @@
     panel.querySelector(".isf-pin").addEventListener("click", async () => {
       state.edgeAutoHide = !state.edgeAutoHide;
       await chrome.storage.local.set({ edgeAutoHide: state.edgeAutoHide });
-      applyEdgeMode();
+      applyChromeVisibility();
       setStatus(state.edgeAutoHide ? "Auto-hide on (hover top-left)" : "Pinned open");
     });
     panel.querySelector(".isf-player-close").addEventListener("click", () => closePlayer());
+    panel.querySelector(".isf-cast-btn").addEventListener("click", () => openCastTab());
     panel.querySelector(".isf-fs-btn").addEventListener("click", () => togglePlayerFullscreen());
     panel.querySelector(".isf-expand-hit").addEventListener("click", () => {
       togglePlayerFullscreen(true); // enter fullscreen from click-on-player
@@ -338,6 +396,12 @@
     panel.querySelector(".isf-test-all").addEventListener("click", () => testAllAndPlay());
     panel.querySelector(".isf-next-src").addEventListener("click", () => shiftSource(1));
     panel.querySelector(".isf-prev-src").addEventListener("click", () => shiftSource(-1));
+    panel.querySelector(".isf-lookup-title").addEventListener("click", () => {
+      lookupTitle(titleInput.value.trim());
+    });
+    titleInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") lookupTitle(titleInput.value.trim());
+    });
 
     document.addEventListener("fullscreenchange", () => {
       const wrap = document.querySelector(`#${PANEL_ID} .isf-player-wrap`);
@@ -358,12 +422,14 @@
     imdbInput.addEventListener("input", async () => {
       const v = imdbInput.value.trim();
       state.imdb = /^tt\d{7,8}$/i.test(v) ? v.toLowerCase() : v || null;
+      applyChromeVisibility();
       renderLinks();
       if (state.imdb) await enrichIds();
     });
     tmdbInput.addEventListener("input", () => {
       const v = tmdbInput.value.trim();
       state.tmdb = /^\d+$/.test(v) ? v : v || null;
+      applyChromeVisibility();
       renderLinks();
     });
     seasonInput.addEventListener("input", () => {
@@ -412,26 +478,160 @@
       { passive: false } // allow preventDefault on wheel
     );
 
-    applyEdgeMode();
+    applyChromeVisibility();
     syncTypeUi();
     syncLockerUi();
     renderLinks();
   }
 
-  function applyEdgeMode() {
+  function hasMediaSignal() {
+    return !!(state.imdb || state.tmdb || state.pendingTitle);
+  }
+
+  // Hide SF completely on pages with no IMDb/TMDB and no title highlight
+  function applyChromeVisibility() {
     const panel = document.getElementById(PANEL_ID);
     const edge = document.getElementById(EDGE_ID);
     if (!panel || !edge) return;
+
+    if (!hasMediaSignal()) {
+      clearTimeout(hideTimer);
+      edge.hidden = true;
+      panel.hidden = true;
+      panel.classList.remove("isf-open", "isf-pinned", "isf-playing");
+      panel.classList.add("isf-hidden");
+      return;
+    }
+
+    panel.hidden = false;
     panel.classList.toggle("isf-pinned", !state.edgeAutoHide);
-    edge.hidden = !state.edgeAutoHide;
+    edge.hidden = !state.edgeAutoHide; // tab only when auto-hide mode
+    edge.title = state.pendingTitle
+      ? `Stream Finder — “${state.pendingTitle.slice(0, 40)}”`
+      : "Stream Finder — hover top-left to open";
+
     if (!state.edgeAutoHide) showPanel();
     else hidePanelSoon(0);
+  }
+
+  function bindTitleSelection() {
+    let selectTimer = null;
+    document.addEventListener("mouseup", () => {
+      clearTimeout(selectTimer);
+      selectTimer = setTimeout(() => {
+        const sel = window.getSelection();
+        const text = (sel && String(sel.toString() || "").trim()) || "";
+        const panel = document.getElementById(PANEL_ID);
+        if (panel && sel?.anchorNode && panel.contains(sel.anchorNode)) return; // ignore selects inside SF
+
+        if (!isTitleLikeSelection(text)) {
+          // Keep SF if we already have real ids; only clear pending title
+          if (!state.imdb && !state.tmdb && state.pendingTitle) {
+            state.pendingTitle = null;
+            applyChromeVisibility();
+          }
+          return;
+        }
+
+        state.pendingTitle = text;
+        const titleInput = panel?.querySelector(".isf-title-query");
+        if (titleInput) titleInput.value = text;
+        applyChromeVisibility();
+        const edge = document.getElementById(EDGE_ID);
+        if (edge) edge.hidden = false; // always show tab when user highlights a title
+        setStatus(`Title selected: “${text.slice(0, 48)}” — open SF & Lookup`);
+      }, 120);
+    });
+  }
+
+  function isTitleLikeSelection(text) {
+    if (!text || text.length < 2 || text.length > 120) return false;
+    if (/^https?:\/\//i.test(text)) return false;
+    if (/^tt\d{7,8}$/i.test(text)) return true; // pasted IMDb id
+    if (/^\d{2,8}$/.test(text)) return false; // bare number — not a title
+    if (!/[a-zA-Z\u00C0-\u024F]/.test(text)) return false; // need letters
+    return true;
+  }
+
+  async function lookupTitle(rawTitle) {
+    const title = String(rawTitle || state.pendingTitle || "").trim();
+    if (!title) {
+      setStatus("Highlight a movie/TV title, then tap Lookup");
+      return;
+    }
+    state.pendingTitle = title;
+    applyChromeVisibility();
+    showPanel();
+    setStatus(`Looking up “${title}”…`);
+
+    // Direct IMDb id pasted as the “title”
+    if (/^tt\d{7,8}$/i.test(title)) {
+      state.imdb = title.toLowerCase();
+      syncIdInputs();
+      await enrichIds();
+      renderLinks();
+      setStatus(`Found ${state.imdb}`);
+      return;
+    }
+
+    try {
+      const hit = await searchTitleViaWikidata(title);
+      if (!hit?.imdb) {
+        setStatus(`No IMDb match for “${title}” — try right‑click → Search on IMDb`);
+        return;
+      }
+      state.imdb = hit.imdb.toLowerCase();
+      if (hit.tmdbTv) {
+        state.tmdb = String(hit.tmdbTv);
+        state.mediaType = "tv";
+      } else if (hit.tmdbMovie) {
+        state.tmdb = String(hit.tmdbMovie);
+        state.mediaType = "movie";
+      }
+      if (hit.isTv) state.mediaType = "tv";
+      syncIdInputs();
+      syncTypeUi();
+      renderLinks();
+      setStatus(`Matched “${title}” → ${state.imdb}`);
+    } catch (_) {
+      setStatus(`Lookup failed — try right‑click → Search on IMDb`);
+    }
+  }
+
+  async function searchTitleViaWikidata(title) {
+    const safe = title.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const sparql = `
+      SELECT ?imdb ?tmdbMovie ?tmdbTv ?isTv WHERE {
+        ?item rdfs:label "${safe}"@en.
+        ?item wdt:P345 ?imdb.
+        OPTIONAL { ?item wdt:P4947 ?tmdbMovie. }
+        OPTIONAL { ?item wdt:P4983 ?tmdbTv. }
+        BIND(EXISTS { ?item wdt:P31/wdt:P279* wd:Q5398426 } AS ?isTv)
+      } LIMIT 1`;
+    const url =
+      "https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(sparql);
+    const res = await fetch(url, { headers: { Accept: "application/sparql-results+json" } });
+    if (!res.ok) throw new Error("wikidata");
+    const data = await res.json();
+    const row = data?.results?.bindings?.[0];
+    if (!row?.imdb?.value) return null;
+    return {
+      imdb: row.imdb.value,
+      tmdbMovie: row.tmdbMovie?.value,
+      tmdbTv: row.tmdbTv?.value,
+      isTv: row.isTv?.value === "true"
+    };
+  }
+
+  function applyEdgeMode() {
+    applyChromeVisibility();
   }
 
   function showPanel() {
     clearTimeout(hideTimer);
     const panel = document.getElementById(PANEL_ID);
-    if (!panel) return;
+    if (!panel || !hasMediaSignal()) return;
+    panel.hidden = false;
     panel.classList.add("isf-open");
     panel.classList.remove("isf-hidden");
   }
@@ -721,6 +921,30 @@
     }
     setStatus(`Now playing: ${name}`);
     renderLinks();
+  }
+
+  function openCastTab() {
+    const panel = document.getElementById(PANEL_ID);
+    const iframe = panel?.querySelector(".isf-player");
+    const src = iframe?.src || state.nowPlayingHref || "";
+    if (!src || src === "about:blank") {
+      setStatus("Play a source first, then tap Cast");
+      return;
+    }
+    const title =
+      panel.querySelector(".isf-player-title")?.textContent?.trim() || "Stream";
+    // Open dedicated cast tab — Chromecast cannot hijack cross-origin embeds directly
+    chrome.runtime.sendMessage({
+      type: "openCastTab",
+      src,
+      title
+    }).catch(() => {
+      const url =
+        chrome.runtime.getURL("cast/cast.html") +
+        `?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+    setStatus("Cast tab opened — use Chrome Cast → Cast tab");
   }
 
   async function togglePlayerFullscreen(forceEnter = false) {

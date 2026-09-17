@@ -260,6 +260,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     refreshProviderCatalog("manual").then(() => sendResponse({ ok: true }));
     return true;
   }
+  if (msg?.type === "openCastTab") {
+    const src = String(msg.src || "");
+    const title = String(msg.title || "Stream");
+    if (!src) {
+      sendResponse({ ok: false, error: "missing_src" });
+      return false;
+    }
+    const url =
+      chrome.runtime.getURL("cast/cast.html") +
+      `?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title)}`;
+    chrome.tabs.create({ url }).then(() => sendResponse({ ok: true }));
+    return true; // async response
+  }
   return false;
 });
 

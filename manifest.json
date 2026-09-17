@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "IMDb Stream Finder",
-  "version": "1.8.0",
-  "description": "Finds IMDb/TMDB IDs, tests playable embeds in-app, and blocks popups/ads.",
+  "version": "1.8.2",
+  "description": "Finds IMDb/TMDB IDs, tests playable embeds in-app, cast tab for TV, and blocks popups/ads.",
   "permissions": [
     "storage",
     "activeTab",

@@ -13,11 +13,11 @@ Sources are included — open any IMDb title page and use the **SF** tab in the 
 
 ## How it works
 
-1. Visit a page with an IMDb id (or paste ids in the panel).
-2. Hover / click the **SF** button in the **top-left** (right edge stays free for the page scrollbar).
-3. Choose **Movie** or **TV**; for TV set season/episode.
+1. Visit a page with an IMDb / TMDB id, **or highlight a movie/TV title** on any page.
+2. Stream Finder appears as the **SF** button in the **top-left** (it stays hidden on unrelated pages).
+3. Choose **Movie** or **TV**; for TV set season/episode. For a highlighted title, tap **Lookup**.
 4. Play or open a source. Add custom templates in the popup anytime.
-5. Highlight text → right-click → **Search on IMDb**.
+5. Highlight text → right-click → **Search on IMDb** (also works).
 
 ## Placeholders
 
