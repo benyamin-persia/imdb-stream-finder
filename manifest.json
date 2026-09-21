@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "IMDb Stream Finder",
-  "version": "1.8.2",
-  "description": "Finds IMDb/TMDB IDs, tests playable embeds in-app, cast tab for TV, and blocks popups/ads.",
+  "version": "1.9.0",
+  "description": "Finds IMDb/TMDB IDs, in-app player, Cast tab, update alerts, and latest releases.",
   "permissions": [
     "storage",
     "activeTab",
@@ -44,6 +44,12 @@
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true
+    },
+    {
+      "matches": ["*://onionplay.st/updates/*", "*://onionplay.st/updates", "*://*.onionplay.st/updates/*", "*://*.onionplay.st/updates"],
+      "js": ["content/releases-scrape.js"],
+      "run_at": "document_idle",
+      "all_frames": false
     },
     {
       "matches": ["<all_urls>"],

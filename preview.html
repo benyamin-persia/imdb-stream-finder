@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sayyad – Correct Chord Coach</title>
+<style>
+:root{
+  --bg:#0a0d12;--panel:#141a22;--panel2:#1b2430;--text:#f5f7fb;--muted:#9aa8ba;
+  --gold:#ffd166;--cyan:#70e1d1;--red:#ff7b7b;--line:#2b3645;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#090c10,#111823);color:var(--text);
+font-family:Inter,Segoe UI,Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1200px;margin:auto;padding:20px}
+h1{margin:0 0 6px;font-size:clamp(28px,4vw,48px)}
+.note{color:var(--muted);line-height:1.55;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:1.3fr .7fr;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:rgba(20,26,34,.96);border:1px solid var(--line);border-radius:18px;padding:18px;
+box-shadow:0 20px 55px rgba(0,0,0,.25)}
+.topbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pill{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:13px}
+.bigChord{text-align:center;font-size:clamp(92px,18vw,190px);font-weight:900;color:var(--gold);line-height:.9;
+letter-spacing:-5px;margin:20px 0 8px}
+.label{text-align:center;color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:1.3px}
+.next{text-align:center;font-size:38px;font-weight:800;color:var(--cyan);margin-top:5px}
+.rowname{text-align:center;font-size:18px;margin-top:14px}
+.rowseq{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin:14px 0 18px}
+.chip{min-width:64px;padding:11px 13px;text-align:center;background:#202a38;border:1px solid var(--line);
+border-radius:12px;font-weight:800}
+.chip.current{background:var(--gold);color:#111;border-color:var(--gold);transform:scale(1.05)}
+.controls{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
+button,label.filebtn{border:1px solid var(--line);background:#202a38;color:var(--text);border-radius:11px;padding:11px 14px;
+font-weight:750;cursor:pointer}
+button:hover,label.filebtn:hover{background:#2a3546}
+.primary{background:var(--gold);color:#151515;border-color:transparent}
+.sync{background:#173d39;border-color:#2c6a62}
+.danger{background:#3c2226;border-color:#6b333a}
+.progress{height:8px;background:#25303d;border-radius:999px;overflow:hidden;margin-top:16px}
+.progress>div{height:100%;background:linear-gradient(90deg,var(--gold),var(--cyan));width:0}
+.timeline{display:flex;gap:7px;overflow:auto;padding:12px 2px 4px}
+.step{flex:0 0 auto;min-width:55px;padding:8px;border:1px solid var(--line);border-radius:9px;text-align:center;
+background:#1d2632;font-weight:700;cursor:pointer}
+.step.active{background:var(--gold);color:#111;border-color:var(--gold)}
+.step.marked::after{content:"•";display:block;line-height:6px;color:var(--cyan);font-size:18px}
+.audioBox{margin-top:16px;padding:12px;background:#0f141c;border:1px dashed #344255;border-radius:12px}
+audio{width:100%;margin-top:10px}
+.sourceRows{max-height:560px;overflow:auto;display:flex;flex-direction:column;gap:9px}
+.rowCard{padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);cursor:pointer}
+.rowCard.active{outline:2px solid var(--gold)}
+.rowTitle{font-size:13px;color:var(--muted);margin-bottom:7px}
+.rowChords{direction:ltr;font-family:Consolas,monospace;font-size:15px;line-height:1.55}
+.lyricBox{margin-top:16px}
+textarea{width:100%;min-height:150px;background:#0f141c;color:var(--text);border:1px solid var(--line);
+border-radius:12px;padding:12px;resize:vertical;font-family:Tahoma,Arial,sans-serif}
+.lyricCurrent{margin-top:12px;padding:14px;background:#111822;border-radius:12px;border:1px solid var(--line);
+font-family:Tahoma,Arial,sans-serif;direction:rtl;text-align:right;min-height:52px}
+.small{font-size:12px;color:var(--muted);line-height:1.55}
+a{color:var(--cyan)}
+kbd{background:#242e3b;border:1px solid #3b4859;border-bottom-width:2px;padding:2px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sayyad – Chord Coach</h1>
+  <div class="note">
+    Corrected to follow the Laminor chord page exactly. No guessed verse structure, no random recording.
+    The page shows the chord order from the source and lets you sync each chord change to your own audio.
+  </div>
+
+  <div class="grid">
+    <main class="card">
+      <div class="topbar">
+        <span class="pill">Key: Fm</span>
+        <span class="pill">Suggested rhythm: 6/8</span>
+        <span class="pill" id="counter">1 / 74</span>
+      </div>
+
+      <div class="label">PLAY NOW</div>
+      <div id="bigChord" class="bigChord">Fm</div>
+      <div class="label">NEXT</div>
+      <div id="nextChord" class="next">Fm7</div>
+
+      <div id="rowName" class="rowname">Intro 1</div>
+      <div id="rowSeq" class="rowseq"></div>
+
+      <div id="lyricCurrent" class="lyricCurrent">Optional lyric line will appear here after you paste your own lyrics below.</div>
+
+      <div class="controls">
+        <button id="prev">◀ Previous</button>
+        <button id="next" class="primary">Next chord ▶</button>
+        <button id="mark" class="sync">● Mark this chord at audio time</button>
+        <button id="restart">↺ Restart</button>
+      </div>
+
+      <div class="progress"><div id="bar"></div></div>
+      <div id="timeline" class="timeline"></div>
+
+      <div class="audioBox">
+        <b>Use your exact recording</b>
+        <div class="small">
+          Load the MP3/audio file you actually practice with. Then, on the first run, press
+          <kbd>M</kbd> every time the chord changes. The timestamps are saved in your browser.
+          On later plays, the chord display follows the audio automatically.
+        </div>
+        <label class="filebtn" for="audioFile">Choose audio file</label>
+        <input id="audioFile" type="file" accept="audio/*" hidden>
+        <audio id="audio" controls></audio>
+        <div class="controls" style="margin-top:10px">
+          <button id="clearMarks" class="danger">Clear saved timing</button>
+        </div>
+      </div>
+
+      <div class="lyricBox">
+        <b>Optional: paste your own lyrics</b>
+        <div class="small">
+          Paste one lyric line per line. This page will pair your lines with the chord rows below.
+          This keeps the lyrics you provide locally in your browser.
+        </div>
+        <textarea id="lyrics" placeholder="Paste the lyrics here, one line per line..."></textarea>
+        <button id="applyLyrics" style="margin-top:8px">Apply lyric lines</button>
+      </div>
+    </main>
+
+    <aside class="card">
+      <h2 style="margin-top:0">Exact chord rows from Laminor</h2>
+      <div class="small" style="margin-bottom:12px">
+        Click any row to jump there. Instrumental rows are included because they are part of the source chord layout.
+      </div>
+      <div id="rows" class="sourceRows"></div>
+
+      <div style="margin-top:16px" class="small">
+        Source:
+        <a target="_blank" rel="noopener"
+        href="https://laminor.org/artists/%D8%B9%D9%84%DB%8C%D8%B1%D8%B6%D8%A7-%D8%A7%D9%81%D8%AA%D8%AE%D8%A7%D8%B1%DB%8C/%D8%B5%DB%8C%D8%A7%D8%AF">
+        Laminor – Sayyad</a>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const rows = [
+  {name:"Intro 1", type:"instrumental", chords:["Fm","Fm7","Fm"]},
+  {name:"Intro 2", type:"instrumental", chords:["Fm","C7","Fm","Bbm","C7","Fm"]},
+
+  {name:"Lyric line 1", type:"lyric", chords:["Fm","C7","Fm"]},
+  {name:"Lyric line 2", type:"lyric", chords:["C7"]},
+  {name:"Lyric line 3", type:"lyric", chords:["Fm","C7","Fm"]},
+  {name:"Lyric line 4", type:"lyric", chords:["C7"]},
+  {name:"Lyric line 5", type:"lyric", chords:["Fm","Bbm"]},
+  {name:"Lyric line 6", type:"lyric", chords:["Fm","C7","Db"]},
+
+  {name:"Instrumental 1", type:"instrumental", chords:["Fm","C7","Fm","C7","Fm","C7"]},
+
+  {name:"Lyric line 7", type:"lyric", chords:["Fm","Bbm","Fm"]},
+  {name:"Lyric line 8", type:"lyric", chords:["Fm","Bbm"]},
+  {name:"Lyric line 9", type:"lyric", chords:["Fm","Bbm","Fm"]},
+  {name:"Lyric line 10", type:"lyric", chords:["Fm","Bbm"]},
+  {name:"Lyric line 11", type:"lyric", chords:["Fm","Bbm"]},
+  {name:"Lyric line 12", type:"lyric", chords:["C7","Bbm","Db"]},
+  {name:"Lyric line 13", type:"lyric", chords:["Fm","C7","Fm","C7"]},
+
+  {name:"Instrumental 2", type:"instrumental", chords:["Fm","C7","Fm","Bbm","C7","Fm"]},
+
+  {name:"Lyric line 14", type:"lyric", chords:["Fm","Bbm","Fm"]},
+  {name:"Lyric line 15", type:"lyric", chords:["Fm","Ebm","Fm"]},
+  {name:"Lyric line 16", type:"lyric", chords:["Fm","Bbm"]},
+  {name:"Lyric line 17", type:"lyric", chords:["Fm"]},
+  {name:"Lyric line 18", type:"lyric", chords:["C7","Bbm","Db"]},
+  {name:"Lyric line 19", type:"lyric", chords:["Fm","C7","Fm","C7"]},
+
+  {name:"Instrumental 3", type:"instrumental", chords:["Fm","C7","Fm","C7"]},
+
+  {name:"Lyric line 20", type:"lyric", chords:["C7","Bbm","Fm"]},
+  {name:"Lyric line 21", type:"lyric", chords:["C7","Bbm"]},
+  {name:"Lyric line 22", type:"lyric", chords:["C7","Bbm","Db"]},
+  {name:"Lyric line 23", type:"lyric", chords:["Fm","C7","Fm","C7"]},
+
+  {name:"Outro", type:"instrumental", chords:["Fm","C7","Fm","C7","Fm","C7"]}
+];
+
+const flat = [];
+rows.forEach((r,ri)=>r.chords.forEach((ch,ci)=>flat.push({ch,row:ri,pos:ci})));
+
+let idx = 0;
+let marks = JSON.parse(localStorage.getItem("sayyad_exact_marks") || "[]");
+let lyricLines = JSON.parse(localStorage.getItem("sayyad_user_lyrics") || "[]");
+const audio = document.getElementById("audio");
+
+function lyricRowIndex(rowIndex){
+  let n = -1;
+  for(let i=0;i<=rowIndex;i++) if(rows[i].type==="lyric") n++;
+  return n;
+}
+
+function render(){
+  const item = flat[idx];
+  document.getElementById("bigChord").textContent = item.ch;
+  document.getElementById("nextChord").textContent = flat[Math.min(idx+1,flat.length-1)].ch;
+  document.getElementById("counter").textContent = `${idx+1} / ${flat.length}`;
+  document.getElementById("rowName").textContent = rows[item.row].name;
+  document.getElementById("bar").style.width = `${(idx/(flat.length-1))*100}%`;
+
+  const rs = document.getElementById("rowSeq");
+  rs.innerHTML = "";
+  rows[item.row].chords.forEach((c,i)=>{
+    const e=document.createElement("div");
+    e.className="chip"+(i===item.pos?" current":"");
+    e.textContent=c;
+    rs.appendChild(e);
+  });
+
+  const li = lyricRowIndex(item.row);
+  if(rows[item.row].type==="lyric" && lyricLines[li]){
+    document.getElementById("lyricCurrent").textContent = lyricLines[li];
+  } else if(rows[item.row].type==="instrumental"){
+    document.getElementById("lyricCurrent").textContent = "Instrumental";
+  } else {
+    document.getElementById("lyricCurrent").textContent = rows[item.row].name;
+  }
+
+  [...document.querySelectorAll(".step")].forEach((e,i)=>{
+    e.classList.toggle("active",i===idx);
+    e.classList.toggle("marked",marks[i]!=null);
+  });
+  [...document.querySelectorAll(".rowCard")].forEach((e,i)=>e.classList.toggle("active",i===item.row));
+
+  const active = document.querySelector(".step.active");
+  if(active) active.scrollIntoView({behavior:"smooth",block:"nearest",inline:"center"});
+  const activeRow = document.querySelector(".rowCard.active");
+  if(activeRow) activeRow.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+function jumpToRow(ri){
+  const first = flat.findIndex(x=>x.row===ri);
+  if(first>=0){ idx=first; render(); }
+}
+function next(){ if(idx<flat.length-1){idx++;render();}}
+function prev(){ if(idx>0){idx--;render();}}
+function restart(){idx=0;audio.currentTime=0;render();}
+
+document.getElementById("timeline").innerHTML = flat.map((x,i)=>
+  `<div class="step" data-i="${i}">${x.ch}</div>`).join("");
+document.querySelectorAll(".step").forEach(e=>e.onclick=()=>{idx=+e.dataset.i;render();});
+
+const rowsEl=document.getElementById("rows");
+rows.forEach((r,ri)=>{
+  const d=document.createElement("div");
+  d.className="rowCard";
+  d.innerHTML=`<div class="rowTitle">${r.name}</div><div class="rowChords">${r.chords.join("  →  ")}</div>`;
+  d.onclick=()=>jumpToRow(ri);
+  rowsEl.appendChild(d);
+});
+
+document.getElementById("next").onclick=next;
+document.getElementById("prev").onclick=prev;
+document.getElementById("restart").onclick=restart;
+
+document.getElementById("mark").onclick=()=>{
+  marks[idx]=+audio.currentTime.toFixed(2);
+  localStorage.setItem("sayyad_exact_marks",JSON.stringify(marks));
+  next();
+};
+
+document.getElementById("clearMarks").onclick=()=>{
+  marks=[];
+  localStorage.removeItem("sayyad_exact_marks");
+  render();
+};
+
+document.getElementById("audioFile").onchange=(e)=>{
+  const f=e.target.files[0];
+  if(f){audio.src=URL.createObjectURL(f);audio.load();}
+};
+
+audio.addEventListener("timeupdate",()=>{
+  if(!marks.some(x=>x!=null)) return;
+  const t=audio.currentTime;
+  let best=0;
+  for(let i=0;i<marks.length;i++){
+    if(marks[i]!=null && marks[i]<=t) best=i;
+  }
+  if(best!==idx){idx=best;render();}
+});
+
+document.getElementById("applyLyrics").onclick=()=>{
+  lyricLines=document.getElementById("lyrics").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  localStorage.setItem("sayyad_user_lyrics",JSON.stringify(lyricLines));
+  render();
+};
+if(lyricLines.length) document.getElementById("lyrics").value=lyricLines.join("\n");
+
+document.addEventListener("keydown",(e)=>{
+  if(document.activeElement.tagName==="TEXTAREA") return;
+  if(e.key==="ArrowRight"){e.preventDefault();next();}
+  else if(e.key==="ArrowLeft"){e.preventDefault();prev();}
+  else if(e.key.toLowerCase()==="m"){
+    e.preventDefault();
+    marks[idx]=+audio.currentTime.toFixed(2);
+    localStorage.setItem("sayyad_exact_marks",JSON.stringify(marks));
+    next();
+  }
+  else if(e.key.toLowerCase()==="r"){restart();}
+  else if(e.code==="Space"){
+    e.preventDefault();
+    if(audio.paused) audio.play(); else audio.pause();
+  }
+});
+
+render();
+</script>
+</body>
+</html>

@@ -8,11 +8,31 @@
   </head>
   <body>
     <main>
+      <div id="update-banner" class="update-banner" hidden>
+        <div>
+          <strong>Update available</strong>
+          <span id="update-banner-text" class="sub"></span>
+        </div>
+        <div class="update-banner-actions">
+          <button type="button" id="update-open-repo" class="primary">Get update</button>
+          <button type="button" id="update-dismiss">Later</button>
+        </div>
+      </div>
+
       <h1>Stream links</h1>
       <p class="sub">
         Placeholders: <code>{imdb}</code> <code>{imdb_raw}</code> <code>{tmdb}</code>
         <code>{season}</code> <code>{episode}</code> <code>{type}</code>
       </p>
+
+      <section class="sync-box">
+        <div class="section-head">
+          <h2>Latest releases</h2>
+          <button type="button" id="refresh-releases">Refresh list</button>
+        </div>
+        <p class="sub" id="releases-meta">Open the updates page once (pass the check), then titles appear here.</p>
+        <div id="releases-list" class="releases-list"></div>
+      </section>
 
       <section class="sync-box">
         <h2>Protection</h2>

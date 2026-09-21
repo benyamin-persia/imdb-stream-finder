@@ -9,7 +9,14 @@ importScripts(
 const AD_RULE_BASE = 1000;
 const POP_RULE_BASE = 1800;
 const CATALOG_ALARM = "isf-catalog-refresh";
+const UPDATE_ALARM = "isf-ext-update-check";
 const CATALOG_PERIOD_MINUTES = 720; // every 12 hours
+const UPDATE_PERIOD_MINUTES = 360; // check GitHub version every 6 hours
+
+// Published on GitHub — bump version.json when you release so users get a badge
+const VERSION_CHECK_URL =
+  "https://raw.githubusercontent.com/benyamin-persia/imdb-stream-finder/main/version.json";
+const DEFAULT_RELEASES_FEED = "https://onionplay.st/updates/";
 
 const OUR_RULE_IDS = [
   ...AD_FILTERS.map((_, i) => AD_RULE_BASE + i),
@@ -43,22 +50,28 @@ chrome.runtime.onInstalled.addListener(async () => {
   ensureImdbSearchMenu();
   queueSyncFromStorage(true);
   await ensureCatalogAlarm();
+  await ensureUpdateAlarm();
   await refreshProviderCatalog("install");
+  await checkExtensionUpdate("install");
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   ensureImdbSearchMenu();
   queueSyncFromStorage(false);
   await ensureCatalogAlarm();
+  await ensureUpdateAlarm();
   await refreshProviderCatalog("startup");
+  await checkExtensionUpdate("startup");
 });
 
 ensureImdbSearchMenu(); // recreate after service worker wake
 queueSyncFromStorage(false);
 ensureCatalogAlarm().then(() => refreshProviderCatalog("wakeup"));
+ensureUpdateAlarm().then(() => checkExtensionUpdate("wakeup"));
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CATALOG_ALARM) refreshProviderCatalog("alarm");
+  if (alarm.name === UPDATE_ALARM) checkExtensionUpdate("alarm");
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -79,6 +92,86 @@ async function ensureCatalogAlarm() {
       delayInMinutes: 1
     });
   }
+}
+
+async function ensureUpdateAlarm() {
+  const existing = await chrome.alarms.get(UPDATE_ALARM);
+  if (!existing) {
+    await chrome.alarms.create(UPDATE_ALARM, {
+      periodInMinutes: UPDATE_PERIOD_MINUTES,
+      delayInMinutes: 0.5
+    });
+  }
+}
+
+function compareVersions(a, b) {
+  const pa = String(a || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b || "0").split(".").map((n) => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d > 0) return 1;
+    if (d < 0) return -1;
+  }
+  return 0;
+}
+
+async function checkExtensionUpdate(reason) {
+  try {
+    const local = chrome.runtime.getManifest().version;
+    const res = await fetch(VERSION_CHECK_URL, { cache: "no-store" });
+    if (!res.ok) return;
+    const remote = await res.json();
+    const remoteVer = String(remote.version || "").trim();
+    if (!remoteVer) return;
+
+    const stored = await chrome.storage.local.get(["updateDismissedVersion"]);
+    const newer = compareVersions(remoteVer, local) > 0;
+    const dismissed = stored.updateDismissedVersion === remoteVer;
+
+    if (newer && !dismissed) {
+      await chrome.storage.local.set({
+        updateAvailable: true,
+        updateRemoteVersion: remoteVer,
+        updateNotes: remote.notes || "",
+        updateRepo: remote.repo || "https://github.com/benyamin-persia/imdb-stream-finder",
+        releasesFeedUrl: remote.releasesFeed || DEFAULT_RELEASES_FEED,
+        lastUpdateCheck: Date.now(),
+        lastUpdateCheckReason: reason
+      });
+      await chrome.action.setBadgeText({ text: "NEW" });
+      await chrome.action.setBadgeBackgroundColor({ color: "#e8a838" });
+      await chrome.action.setTitle({
+        title: `IMDb Stream Finder — update available (v${remoteVer})`
+      });
+    } else {
+      await chrome.storage.local.set({
+        updateAvailable: false,
+        updateRemoteVersion: remoteVer,
+        updateNotes: remote.notes || "",
+        updateRepo: remote.repo || "https://github.com/benyamin-persia/imdb-stream-finder",
+        releasesFeedUrl: remote.releasesFeed || DEFAULT_RELEASES_FEED,
+        lastUpdateCheck: Date.now(),
+        lastUpdateCheckReason: reason
+      });
+      if (!newer) {
+        await chrome.action.setBadgeText({ text: "" });
+        await chrome.action.setTitle({ title: "IMDb Stream Finder" });
+      }
+    }
+  } catch (err) {
+    console.warn("[Stream Finder] update check failed:", err);
+  }
+}
+
+async function dismissUpdateBanner() {
+  const stored = await chrome.storage.local.get(["updateRemoteVersion"]);
+  await chrome.storage.local.set({
+    updateAvailable: false,
+    updateDismissedVersion: stored.updateRemoteVersion || ""
+  });
+  await chrome.action.setBadgeText({ text: "" });
+  await chrome.action.setTitle({ title: "IMDb Stream Finder" });
 }
 
 // Prefer local providers. Optional remote URL only if you set one yourself.
@@ -259,6 +352,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "refreshCatalogNow") {
     refreshProviderCatalog("manual").then(() => sendResponse({ ok: true }));
     return true;
+  }
+  if (msg?.type === "checkExtensionUpdate") {
+    checkExtensionUpdate("manual").then(async () => {
+      const s = await chrome.storage.local.get([
+        "updateAvailable",
+        "updateRemoteVersion",
+        "updateNotes",
+        "updateRepo"
+      ]);
+      sendResponse({ ok: true, ...s, localVersion: chrome.runtime.getManifest().version });
+    });
+    return true;
+  }
+  if (msg?.type === "dismissUpdate") {
+    dismissUpdateBanner().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === "openReleasesFeed") {
+    chrome.storage.local.get(["releasesFeedUrl"]).then((s) => {
+      const url = s.releasesFeedUrl || DEFAULT_RELEASES_FEED;
+      chrome.tabs.create({ url }).then(() => sendResponse({ ok: true, url }));
+    });
+    return true;
+  }
+  if (msg?.type === "releasesScraped") {
+    // Optional badge pulse when a fresh list arrives
+    chrome.action.setBadgeText({ text: "TV" }).catch(() => {});
+    setTimeout(() => {
+      chrome.storage.local.get(["updateAvailable"]).then((s) => {
+        chrome.action.setBadgeText({ text: s.updateAvailable ? "NEW" : "" });
+      });
+    }, 4000);
+    sendResponse({ ok: true });
+    return false;
   }
   if (msg?.type === "openCastTab") {
     const src = String(msg.src || "");

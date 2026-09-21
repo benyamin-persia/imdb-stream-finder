@@ -30,4 +30,14 @@ Sources are included — open any IMDb title page and use the **SF** tab in the 
 | `{episode}` | `1` | TV episode |
 | `{type}` | `movie` | Media type |
 
-Add your own templates in the popup with those tokens (e.g. `https://example.com/watch/{imdb}`).
+## Updates for users
+
+When you ship a new build:
+
+1. Bump `manifest.json` **and** `version.json` to the same version.
+2. Push to GitHub.
+3. Friends’ extensions check `version.json` every few hours — they get a **NEW** badge on the toolbar icon, a banner in the popup, and a tip in the Stream Finder panel.
+
+## Latest releases panel
+
+The popup can list recent titles from the configured releases feed (see `releasesFeed` in `version.json`). Because that site uses a bot check, click **Refresh list** once, pass the check in the opened tab, then reopen the popup — titles are saved automatically.

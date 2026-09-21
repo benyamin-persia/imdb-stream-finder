@@ -75,7 +75,22 @@
         state.edgeAutoHide = changes.edgeAutoHide.newValue !== false;
         applyChromeVisibility();
       }
+      if (changes.updateAvailable || changes.updateRemoteVersion) syncUpdateTip();
       renderLinks();
+    });
+  }
+
+  function syncUpdateTip() {
+    const tip = document.querySelector(`#${PANEL_ID} .isf-update-tip`);
+    const text = document.querySelector(`#${PANEL_ID} .isf-update-tip-text`);
+    if (!tip) return;
+    chrome.storage.local.get(["updateAvailable", "updateRemoteVersion"], (stored) => {
+      if (stored.updateAvailable && stored.updateRemoteVersion) {
+        tip.hidden = false;
+        if (text) text.textContent = `Update available → v${stored.updateRemoteVersion}`;
+      } else {
+        tip.hidden = true;
+      }
     });
   }
 
@@ -311,6 +326,11 @@
           <button type="button" class="isf-minimize" title="Hide" aria-label="Hide">×</button>
         </div>
       </header>
+      <div class="isf-update-tip" hidden>
+        <span class="isf-update-tip-text">Update available</span>
+        <button type="button" class="isf-update-open">Get it</button>
+        <button type="button" class="isf-update-dismiss">×</button>
+      </div>
       <div class="isf-player-wrap" hidden>
         <div class="isf-player-bar">
           <div class="isf-now-playing">
@@ -402,6 +422,16 @@
     titleInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") lookupTitle(titleInput.value.trim());
     });
+    panel.querySelector(".isf-update-dismiss").addEventListener("click", async () => {
+      await chrome.runtime.sendMessage({ type: "dismissUpdate" }).catch(() => {});
+      syncUpdateTip();
+    });
+    panel.querySelector(".isf-update-open").addEventListener("click", async () => {
+      const stored = await chrome.storage.local.get(["updateRepo"]);
+      const url = stored.updateRepo || "https://github.com/benyamin-persia/imdb-stream-finder";
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+    syncUpdateTip();
 
     document.addEventListener("fullscreenchange", () => {
       const wrap = document.querySelector(`#${PANEL_ID} .isf-player-wrap`);

@@ -115,6 +115,23 @@
     await save(true);
   });
 
+  document.getElementById("update-dismiss").addEventListener("click", async () => {
+    await chrome.runtime.sendMessage({ type: "dismissUpdate" }).catch(() => {});
+    document.getElementById("update-banner").hidden = true;
+    flash("Update reminder dismissed");
+  });
+
+  document.getElementById("update-open-repo").addEventListener("click", async () => {
+    const stored = await chrome.storage.local.get(["updateRepo"]);
+    const url = stored.updateRepo || "https://github.com/benyamin-persia/imdb-stream-finder";
+    chrome.tabs.create({ url });
+  });
+
+  document.getElementById("refresh-releases").addEventListener("click", async () => {
+    flash("Opening updates page — pass the check, then reopen this popup");
+    await chrome.runtime.sendMessage({ type: "openReleasesFeed" }).catch(() => {});
+  });
+
   init();
 
   async function init() {
@@ -127,7 +144,12 @@
       "lockerEnabled",
       "edgeAutoHide",
       "autoUpdateProviders",
-      "lastCatalogRefresh"
+      "lastCatalogRefresh",
+      "updateAvailable",
+      "updateRemoteVersion",
+      "updateNotes",
+      "latestReleases",
+      "latestReleasesAt"
     ]);
     const defaults = getDefaultLinkLists();
     movieLinks = mergeLinkLists(stored.movieLinks, defaults.movieLinks);
@@ -145,7 +167,60 @@
         (stored.catalogUpdated ? ` (${stored.catalogUpdated})` : "") +
         ` · auto-refresh: ${last}`
       : `Bundled catalog: v${STREAM_PROVIDER_CATALOG.version} · auto-refresh: ${last}`;
+
+    renderUpdateBanner(stored);
+    renderReleases(stored.latestReleases || [], stored.latestReleasesAt);
     render();
+
+    // Re-check GitHub version when popup opens
+    chrome.runtime.sendMessage({ type: "checkExtensionUpdate" }).then((res) => {
+      if (res?.ok) renderUpdateBanner(res);
+    }).catch(() => {});
+  }
+
+  function renderUpdateBanner(stored) {
+    const banner = document.getElementById("update-banner");
+    const text = document.getElementById("update-banner-text");
+    const local = chrome.runtime.getManifest().version;
+    if (stored.updateAvailable && stored.updateRemoteVersion) {
+      banner.hidden = false;
+      text.textContent =
+        `v${local} → v${stored.updateRemoteVersion}` +
+        (stored.updateNotes ? ` — ${stored.updateNotes}` : "") +
+        ". Pull latest from GitHub, then Reload unpacked.";
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  function renderReleases(items, at) {
+    const list = document.getElementById("releases-list");
+    const meta = document.getElementById("releases-meta");
+    list.innerHTML = "";
+    if (!items.length) {
+      meta.textContent =
+        "No list yet — click Refresh list, pass the site check, then open this popup again.";
+      return;
+    }
+    meta.textContent =
+      `${items.length} titles` +
+      (at ? ` · updated ${new Date(at).toLocaleString()}` : "") +
+      " · click a title to look it up on IMDb";
+    for (const item of items.slice(0, 25)) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "release-item";
+      btn.textContent = item.title;
+      btn.title = item.href || item.title;
+      btn.addEventListener("click", () => {
+        const q = item.imdb || item.title;
+        const url = item.imdb
+          ? `https://www.imdb.com/title/${item.imdb}/`
+          : `https://www.imdb.com/find/?q=${encodeURIComponent(q)}`;
+        chrome.tabs.create({ url });
+      });
+      list.appendChild(btn);
+    }
   }
 
   async function fetchRemoteCatalog(url) {

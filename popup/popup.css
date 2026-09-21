@@ -45,6 +45,47 @@
   gap: 6px;
 }
 
+.update-banner {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 168, 56, 0.55);
+  background: rgba(232, 168, 56, 0.14);
+}
+
+.update-banner[hidden] {
+  display: none !important;
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.releases-list {
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.release-item {
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.release-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 * {
   box-sizing: border-box;
 }
