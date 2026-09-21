@@ -1,6 +1,6 @@
 {
-  "version": "1.9.0",
-  "notes": "Update alerts on the badge + popup, and a Latest releases panel.",
+  "version": "1.9.1",
+  "notes": "Latest releases from Fandango Movies in Theaters.",
   "repo": "https://github.com/benyamin-persia/imdb-stream-finder",
-  "releasesFeed": "https://onionplay.st/updates/"
+  "releasesFeed": "https://www.fandango.com/movies-in-theaters"
 }

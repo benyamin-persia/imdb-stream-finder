@@ -40,4 +40,4 @@ When you ship a new build:
 
 ## Latest releases panel
 
-The popup can list recent titles from the configured releases feed (see `releasesFeed` in `version.json`). Because that site uses a bot check, click **Refresh list** once, pass the check in the opened tab, then reopen the popup — titles are saved automatically.
+The popup **Latest releases** section loads **now playing** titles from Fandango (`movies-in-theaters`). Click **Refresh list** anytime. Titles open IMDb search when clicked.

@@ -16,7 +16,7 @@ const UPDATE_PERIOD_MINUTES = 360; // check GitHub version every 6 hours
 // Published on GitHub — bump version.json when you release so users get a badge
 const VERSION_CHECK_URL =
   "https://raw.githubusercontent.com/benyamin-persia/imdb-stream-finder/main/version.json";
-const DEFAULT_RELEASES_FEED = "https://onionplay.st/updates/";
+const DEFAULT_RELEASES_FEED = "https://www.fandango.com/movies-in-theaters";
 
 const OUR_RULE_IDS = [
   ...AD_FILTERS.map((_, i) => AD_RULE_BASE + i),
@@ -68,6 +68,7 @@ ensureImdbSearchMenu(); // recreate after service worker wake
 queueSyncFromStorage(false);
 ensureCatalogAlarm().then(() => refreshProviderCatalog("wakeup"));
 ensureUpdateAlarm().then(() => checkExtensionUpdate("wakeup"));
+refreshReleasesFeed("wakeup").catch(() => {});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CATALOG_ALARM) refreshProviderCatalog("alarm");
@@ -172,6 +173,61 @@ async function dismissUpdateBanner() {
   });
   await chrome.action.setBadgeText({ text: "" });
   await chrome.action.setTitle({ title: "IMDb Stream Finder" });
+}
+
+// Parse Fandango Movies in Theaters HTML into { title, href, year }[]
+function parseFandangoReleasesHtml(html, baseUrl) {
+  const items = [];
+  const seen = new Set();
+  const re =
+    /<a[^>]*class="[^"]*grid-item-link[^"]*"[^>]*href="([^"]+)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*grid-item-title[^"]*"[^>]*>([^<]+)<\/span>/gi;
+  let m;
+  while ((m = re.exec(html)) && items.length < 60) {
+    const hrefPath = m[1];
+    const title = String(m[2] || "").replace(/\s+/g, " ").trim();
+    if (!title || title.length < 2) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const yearM = title.match(/\((\d{4})\)/);
+    let href = hrefPath;
+    try {
+      href = new URL(hrefPath, baseUrl).href;
+    } catch (_) {}
+    items.push({ title, href, year: yearM ? yearM[1] : null, imdb: null });
+  }
+  return items;
+}
+
+async function refreshReleasesFeed(reason) {
+  const stored = await chrome.storage.local.get(["releasesFeedUrl"]);
+  let url = stored.releasesFeedUrl || DEFAULT_RELEASES_FEED;
+  if (/onionplay/i.test(url)) url = DEFAULT_RELEASES_FEED; // migrate away from old feed
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Accept: "text/html",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      }
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+    const items = parseFandangoReleasesHtml(html, url);
+    if (!items.length) throw new Error("no_titles_parsed");
+    await chrome.storage.local.set({
+      latestReleases: items,
+      latestReleasesAt: Date.now(),
+      latestReleasesSource: url,
+      releasesFeedUrl: url,
+      lastReleasesRefreshReason: reason
+    });
+    return { ok: true, count: items.length, url };
+  } catch (err) {
+    console.warn("[Stream Finder] releases refresh failed:", err);
+    return { ok: false, error: String(err?.message || err), url };
+  }
 }
 
 // Prefer local providers. Optional remote URL only if you set one yourself.
@@ -374,6 +430,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const url = s.releasesFeedUrl || DEFAULT_RELEASES_FEED;
       chrome.tabs.create({ url }).then(() => sendResponse({ ok: true, url }));
     });
+    return true;
+  }
+  if (msg?.type === "refreshReleasesFeed") {
+    refreshReleasesFeed("manual").then(sendResponse);
     return true;
   }
   if (msg?.type === "releasesScraped") {

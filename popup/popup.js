@@ -128,8 +128,20 @@
   });
 
   document.getElementById("refresh-releases").addEventListener("click", async () => {
-    flash("Opening updates page — pass the check, then reopen this popup");
-    await chrome.runtime.sendMessage({ type: "openReleasesFeed" }).catch(() => {});
+    flash("Fetching now-playing list…");
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "refreshReleasesFeed" });
+      if (res?.ok) {
+        const stored = await chrome.storage.local.get(["latestReleases", "latestReleasesAt"]);
+        renderReleases(stored.latestReleases || [], stored.latestReleasesAt);
+        flash(`Loaded ${res.count} movies in theaters`);
+      } else {
+        flash("Fetch failed — opening Fandango so you can retry");
+        await chrome.runtime.sendMessage({ type: "openReleasesFeed" }).catch(() => {});
+      }
+    } catch (_) {
+      flash("Could not refresh releases");
+    }
   });
 
   init();
@@ -198,8 +210,7 @@
     const meta = document.getElementById("releases-meta");
     list.innerHTML = "";
     if (!items.length) {
-      meta.textContent =
-        "No list yet — click Refresh list, pass the site check, then open this popup again.";
+      meta.textContent = "No list yet — click Refresh list to load Fandango now-playing.";
       return;
     }
     meta.textContent =
