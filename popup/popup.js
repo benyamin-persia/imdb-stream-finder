@@ -214,17 +214,46 @@
       return;
     }
     meta.textContent =
-      `${items.length} titles` +
-      (at ? ` · updated ${new Date(at).toLocaleString()}` : "") +
-      " · click a title to look it up on IMDb";
-    for (const item of items.slice(0, 25)) {
+      `${items.length} now playing` +
+      (at ? ` · ${new Date(at).toLocaleString()}` : "") +
+      " · click a poster for IMDb";
+
+    for (const item of items.slice(0, 48)) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "release-item";
-      btn.textContent = item.title;
-      btn.title = item.href || item.title;
+      btn.className = "release-card";
+      btn.title = item.title;
+
+      const poster = document.createElement("div");
+      poster.className = "release-poster";
+      if (item.poster) {
+        poster.style.backgroundImage = `url("${item.poster.replace(/"/g, '\\"')}")`;
+      }
+
+      const metaInfo = document.createElement("div");
+      metaInfo.className = "release-meta";
+
+      const title = document.createElement("span");
+      title.className = "release-title";
+      title.textContent = item.title;
+
+      metaInfo.appendChild(title);
+      if (item.certified) {
+        const badge = document.createElement("span");
+        badge.className = "release-certified";
+        badge.textContent = item.certified;
+        metaInfo.appendChild(badge);
+      } else if (item.released) {
+        const rel = document.createElement("span");
+        rel.className = "release-date";
+        rel.textContent = item.released;
+        metaInfo.appendChild(rel);
+      }
+
+      btn.appendChild(poster);
+      btn.appendChild(metaInfo);
       btn.addEventListener("click", () => {
-        const q = item.imdb || item.title;
+        const q = item.imdb || item.title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
         const url = item.imdb
           ? `https://www.imdb.com/title/${item.imdb}/`
           : `https://www.imdb.com/find/?q=${encodeURIComponent(q)}`;

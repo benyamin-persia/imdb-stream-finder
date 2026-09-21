@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IMDb Stream Finder",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "Finds IMDb/TMDB IDs, in-app player, Cast tab, update alerts, and Fandango now-playing list.",
   "permissions": [
     "storage",

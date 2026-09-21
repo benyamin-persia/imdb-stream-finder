@@ -175,26 +175,60 @@ async function dismissUpdateBanner() {
   await chrome.action.setTitle({ title: "IMDb Stream Finder" });
 }
 
-// Parse Fandango Movies in Theaters HTML into { title, href, year }[]
+// Parse Fandango Movies in Theaters HTML into poster cards
 function parseFandangoReleasesHtml(html, baseUrl) {
   const items = [];
   const seen = new Set();
-  const re =
-    /<a[^>]*class="[^"]*grid-item-link[^"]*"[^>]*href="([^"]+)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*grid-item-title[^"]*"[^>]*>([^<]+)<\/span>/gi;
+  const blockRe =
+    /<a[^>]*class="[^"]*grid-item-link[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
   let m;
-  while ((m = re.exec(html)) && items.length < 60) {
+  while ((m = blockRe.exec(html)) && items.length < 60) {
     const hrefPath = m[1];
-    const title = String(m[2] || "").replace(/\s+/g, " ").trim();
+    const block = m[2];
+    const titleM = block.match(/class="[^"]*grid-item-title[^"]*"[^>]*>([^<]+)/i);
+    const title = String(titleM?.[1] || "").replace(/\s+/g, " ").trim();
     if (!title || title.length < 2) continue;
     const key = title.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
+
+    let poster = null;
+    const lazy = block.match(/data-fd-lazy-image="([^"]+)"/i);
+    const bg =
+      block.match(/background-image:\s*url\(&quot;([^&]+)&quot;\)/i) ||
+      block.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/i);
+    if (lazy) poster = lazy[1];
+    else if (bg) poster = bg[1];
+    if (poster) {
+      poster = poster
+        .replace(/&amp;/g, "&")
+        .replace(/\\u0026/g, "&")
+        .trim();
+    }
+
+    const certM = block.match(/grid-item-certified[\s\S]*?<\/span>([^<]+)/i);
+    const certified = String(certM?.[1] || "").replace(/\s+/g, " ").trim() || null;
+
+    const sr = block.match(/class="[^"]*sr-only[^"]*"[^>]*>([^<]+)/i);
+    const srText = String(sr?.[1] || "");
+    const releasedM = srText.match(/Released\s+(.+)$/i);
+    const released = releasedM ? releasedM[1].trim() : null;
+
     const yearM = title.match(/\((\d{4})\)/);
     let href = hrefPath;
     try {
       href = new URL(hrefPath, baseUrl).href;
     } catch (_) {}
-    items.push({ title, href, year: yearM ? yearM[1] : null, imdb: null });
+
+    items.push({
+      title,
+      href,
+      poster,
+      certified,
+      released,
+      year: yearM ? yearM[1] : null,
+      imdb: null
+    });
   }
   return items;
 }

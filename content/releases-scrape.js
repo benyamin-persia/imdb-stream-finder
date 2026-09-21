@@ -1,6 +1,16 @@
-// Fandango "Movies in Theaters" — scrape titles into chrome.storage when the page is open
+// Fandango "Movies in Theaters" — scrape poster cards into chrome.storage
 (() => {
   const MAX = 60;
+
+  function posterFromEl(a) {
+    const posterEl = a.querySelector(".grid-item-poster");
+    if (!posterEl) return null;
+    const lazy = posterEl.getAttribute("data-fd-lazy-image");
+    if (lazy) return lazy;
+    const bg = posterEl.style?.backgroundImage || "";
+    const m = bg.match(/url\(["']?([^"')]+)["']?\)/i);
+    return m ? m[1] : null;
+  }
 
   function scrape() {
     const seen = new Set();
@@ -8,16 +18,25 @@
     for (const a of document.querySelectorAll("a.grid-item-link")) {
       if (items.length >= MAX) break;
       const titleEl = a.querySelector(".grid-item-title");
-      const title = (titleEl?.textContent || a.querySelector(".sr-only")?.textContent || "").trim();
+      const title = (titleEl?.textContent || "").trim();
       const href = a.href || "";
       if (!title || title.length < 2) continue;
       const key = title.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       const yearM = title.match(/\((\d{4})\)/);
+      const certEl = a.querySelector(".grid-item-certified");
+      const certified = certEl
+        ? certEl.textContent.replace(/\s+/g, " ").trim()
+        : null;
+      const sr = (a.querySelector(".sr-only")?.textContent || "").trim();
+      const releasedM = sr.match(/Released\s+(.+)$/i);
       items.push({
         title,
         href,
+        poster: posterFromEl(a),
+        certified: certified || null,
+        released: releasedM ? releasedM[1].trim() : null,
         year: yearM ? yearM[1] : null,
         imdb: null
       });
