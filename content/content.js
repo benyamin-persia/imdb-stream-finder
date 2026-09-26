@@ -25,10 +25,51 @@
 
   let hideTimer = null;
 
-  init();
+  function extAlive() {
+    // False after chrome://extensions Reload — old page scripts must stop using chrome.*
+    try {
+      return Boolean(chrome?.runtime?.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function storageGet(keys) {
+    if (!extAlive()) return {};
+    try {
+      return await chrome.storage.local.get(keys);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function storageSet(obj) {
+    if (!extAlive()) return;
+    try {
+      await chrome.storage.local.set(obj);
+    } catch (_) {}
+  }
+
+  function storageGetCb(keys, cb) {
+    if (!extAlive()) {
+      cb({});
+      return;
+    }
+    try {
+      chrome.storage.local.get(keys, (stored) => {
+        if (chrome.runtime.lastError) cb({});
+        else cb(stored || {});
+      });
+    } catch (_) {
+      cb({});
+    }
+  }
+
+  init().catch(() => {}); // swallow "Extension context invalidated" after reload
 
   async function init() {
-    const stored = await chrome.storage.local.get([
+    if (!extAlive()) return;
+    const stored = await storageGet([
       "movieLinks",
       "tvLinks",
       "lockerEnabled",
@@ -38,16 +79,16 @@
     state.tvLinks = mergeLinkLists(stored.tvLinks, STREAM_FINDER_DEFAULTS.tvLinks);
     // Only persist when we actually have sources (never write empty over a good list)
     if (state.movieLinks.length || state.tvLinks.length) {
-      await chrome.storage.local.set({
+      await storageSet({
         movieLinks: state.movieLinks,
         tvLinks: state.tvLinks
       });
     } else {
       // Ask background to seed from local catalog, then re-read
       try {
-        await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
+        if (extAlive()) await chrome.runtime.sendMessage({ type: "refreshCatalogNow" });
       } catch (_) {}
-      const again = await chrome.storage.local.get(["movieLinks", "tvLinks"]);
+      const again = await storageGet(["movieLinks", "tvLinks"]);
       state.movieLinks = again.movieLinks || [];
       state.tvLinks = again.tvLinks || [];
     }
@@ -57,34 +98,52 @@
 
     scanPage();
     injectChrome();
+    // Remove leftover browse iframe from older builds
+    document.getElementById("isf-imdb-browse")?.remove();
+    document.documentElement.classList.remove("isf-imdb-framed");
+    window.addEventListener("popstate", () => {
+      // Back/forward: soft-swap IMDb again so SF still does not remount
+      const m = location.pathname.match(/\/title\/(tt\d{7,8})\/?/i);
+      if (!m || !isOnImdbHost()) return;
+      softOpenImdbTitle(m[1], null, { push: false }).catch(() => {});
+    });
     await enrichIds();
     applyChromeVisibility(); // only show SF when IMDb/TMDB found (or later via highlight)
     renderLinks();
+    await loadPanelReleases(); // fill right-side Latest releases from storage
     bindTitleSelection(); // highlight a title → reveal Stream Finder
 
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local") return;
-      if (changes.movieLinks) state.movieLinks = changes.movieLinks.newValue;
-      if (changes.tvLinks) state.tvLinks = changes.tvLinks.newValue;
-      if (changes.lockerEnabled) {
-        state.lockerEnabled = changes.lockerEnabled.newValue !== false;
-        syncLockerMain(state.lockerEnabled);
-        syncLockerUi();
-      }
-      if (changes.edgeAutoHide) {
-        state.edgeAutoHide = changes.edgeAutoHide.newValue !== false;
-        applyChromeVisibility();
-      }
-      if (changes.updateAvailable || changes.updateRemoteVersion) syncUpdateTip();
-      renderLinks();
-    });
+    if (!extAlive()) return;
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (!extAlive() || area !== "local") return;
+        if (changes.movieLinks) state.movieLinks = changes.movieLinks.newValue;
+        if (changes.tvLinks) state.tvLinks = changes.tvLinks.newValue;
+        if (changes.lockerEnabled) {
+          state.lockerEnabled = changes.lockerEnabled.newValue !== false;
+          syncLockerMain(state.lockerEnabled);
+          syncLockerUi();
+        }
+        if (changes.edgeAutoHide) {
+          state.edgeAutoHide = changes.edgeAutoHide.newValue !== false;
+          applyChromeVisibility();
+        }
+        if (changes.updateAvailable || changes.updateRemoteVersion) syncUpdateTip();
+        if (changes.latestReleases || changes.latestReleasesAt) {
+          storageGet(["latestReleases", "latestReleasesAt"]).then((s) => {
+            renderPanelReleases(s.latestReleases || [], s.latestReleasesAt);
+          });
+        }
+        renderLinks();
+      });
+    } catch (_) {}
   }
 
   function syncUpdateTip() {
     const tip = document.querySelector(`#${PANEL_ID} .isf-update-tip`);
     const text = document.querySelector(`#${PANEL_ID} .isf-update-tip-text`);
     if (!tip) return;
-    chrome.storage.local.get(["updateAvailable", "updateRemoteVersion"], (stored) => {
+    storageGetCb(["updateAvailable", "updateRemoteVersion"], (stored) => {
       if (stored.updateAvailable && stored.updateRemoteVersion) {
         tip.hidden = false;
         if (text) text.textContent = `Update available → v${stored.updateRemoteVersion}`;
@@ -322,7 +381,7 @@
       <header class="isf-header">
         <div class="isf-title">Stream Finder</div>
         <div class="isf-header-actions">
-          <button type="button" class="isf-pin" title="Keep open / auto-hide">📌</button>
+          <button type="button" class="isf-pin" title="Pin open — shrinks the page to sit beside Stream Finder">📌</button>
           <button type="button" class="isf-minimize" title="Hide" aria-label="Hide">×</button>
         </div>
       </header>
@@ -356,32 +415,45 @@
         </div>
         <p class="isf-probe-line"></p>
       </div>
-      <div class="isf-scroll">
-        <p class="isf-status" hidden></p>
-        <div class="isf-ids">
-          <label>IMDb <input type="text" class="isf-imdb" placeholder="tt0000000" spellcheck="false" /></label>
-          <label>TMDB <input type="text" class="isf-tmdb" placeholder="12345" spellcheck="false" /></label>
+      <div class="isf-split">
+        <div class="isf-scroll">
+          <p class="isf-status" hidden></p>
+          <div class="isf-ids">
+            <label>IMDb <input type="text" class="isf-imdb" placeholder="tt0000000" spellcheck="false" /></label>
+            <label>TMDB <input type="text" class="isf-tmdb" placeholder="12345" spellcheck="false" /></label>
+          </div>
+          <div class="isf-title-search">
+            <label>Title <input type="text" class="isf-title-query" placeholder="Highlight a title or type one" spellcheck="false" /></label>
+            <button type="button" class="isf-lookup-title">Lookup</button>
+          </div>
+          <div class="isf-type">
+            <button type="button" data-type="movie" class="isf-type-btn">Movie</button>
+            <button type="button" data-type="tv" class="isf-type-btn">TV</button>
+          </div>
+          <div class="isf-tv-controls" hidden>
+            <label>Season <input type="number" class="isf-season" min="1" value="1" /></label>
+            <label>Episode <input type="number" class="isf-episode" min="1" value="1" /></label>
+            <button type="button" class="isf-play-episode" title="Load and play this season/episode">
+              Play episode
+            </button>
+          </div>
+          <label class="isf-locker-row">
+            <input type="checkbox" class="isf-locker-toggle" />
+            <span>Popup + ad locker</span>
+          </label>
+          <button type="button" class="isf-test-all">Test all & play best</button>
+          <div class="isf-links-head">Sources</div>
+          <div class="isf-links"></div>
+          <p class="isf-hint">Player stays on top while you scroll sources. OK / ? / FAIL — use Next if blank.</p>
         </div>
-        <div class="isf-title-search">
-          <label>Title <input type="text" class="isf-title-query" placeholder="Highlight a title or type one" spellcheck="false" /></label>
-          <button type="button" class="isf-lookup-title">Lookup</button>
-        </div>
-        <div class="isf-type">
-          <button type="button" data-type="movie" class="isf-type-btn">Movie</button>
-          <button type="button" data-type="tv" class="isf-type-btn">TV</button>
-        </div>
-        <div class="isf-tv-controls" hidden>
-          <label>Season <input type="number" class="isf-season" min="1" value="1" /></label>
-          <label>Episode <input type="number" class="isf-episode" min="1" value="1" /></label>
-        </div>
-        <label class="isf-locker-row">
-          <input type="checkbox" class="isf-locker-toggle" />
-          <span>Popup + ad locker</span>
-        </label>
-        <button type="button" class="isf-test-all">Test all & play best</button>
-        <div class="isf-links-head">Sources</div>
-        <div class="isf-links"></div>
-        <p class="isf-hint">Player stays on top while you scroll sources. OK / ? / FAIL — use Next if blank.</p>
+        <aside class="isf-releases" aria-label="Latest releases">
+          <div class="isf-releases-head">
+            <h3>Latest releases</h3>
+            <button type="button" class="isf-releases-refresh">Refresh</button>
+          </div>
+          <p class="isf-releases-meta">Now playing — click a poster to update the IMDb page (Stream Finder stays open).</p>
+          <div class="isf-releases-list"></div>
+        </aside>
       </div>
     `;
     document.documentElement.appendChild(panel);
@@ -403,9 +475,13 @@
     panel.querySelector(".isf-minimize").addEventListener("click", () => hidePanelSoon(0));
     panel.querySelector(".isf-pin").addEventListener("click", async () => {
       state.edgeAutoHide = !state.edgeAutoHide;
-      await chrome.storage.local.set({ edgeAutoHide: state.edgeAutoHide });
+      await storageSet({ edgeAutoHide: state.edgeAutoHide });
       applyChromeVisibility();
-      setStatus(state.edgeAutoHide ? "Auto-hide on (hover top-left)" : "Pinned open");
+      setStatus(
+        state.edgeAutoHide
+          ? "Auto-hide on (hover top-left)"
+          : "Pinned — page shrunk to fit beside Stream Finder"
+      );
     });
     panel.querySelector(".isf-player-close").addEventListener("click", () => closePlayer());
     panel.querySelector(".isf-cast-btn").addEventListener("click", () => openCastTab());
@@ -422,12 +498,15 @@
     titleInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") lookupTitle(titleInput.value.trim());
     });
+    panel.querySelector(".isf-releases-refresh").addEventListener("click", () => refreshPanelReleases());
     panel.querySelector(".isf-update-dismiss").addEventListener("click", async () => {
-      await chrome.runtime.sendMessage({ type: "dismissUpdate" }).catch(() => {});
+      try {
+        if (extAlive()) await chrome.runtime.sendMessage({ type: "dismissUpdate" });
+      } catch (_) {}
       syncUpdateTip();
     });
     panel.querySelector(".isf-update-open").addEventListener("click", async () => {
-      const stored = await chrome.storage.local.get(["updateRepo"]);
+      const stored = await storageGet(["updateRepo"]);
       const url = stored.updateRepo || "https://github.com/benyamin-persia/imdb-stream-finder";
       window.open(url, "_blank", "noopener,noreferrer");
     });
@@ -444,7 +523,7 @@
 
     lockerToggle.addEventListener("change", async () => {
       state.lockerEnabled = lockerToggle.checked;
-      await chrome.storage.local.set({ lockerEnabled: state.lockerEnabled });
+      await storageSet({ lockerEnabled: state.lockerEnabled });
       syncLockerMain(state.lockerEnabled);
       setStatus(state.lockerEnabled ? "Locker ON" : "Locker OFF");
     });
@@ -462,20 +541,26 @@
       applyChromeVisibility();
       renderLinks();
     });
-    seasonInput.addEventListener("input", () => {
-      state.season = Math.max(1, Number(seasonInput.value) || 1);
-      renderLinks();
-    });
-    episodeInput.addEventListener("input", () => {
-      state.episode = Math.max(1, Number(episodeInput.value) || 1);
-      renderLinks();
+    seasonInput.addEventListener("input", () => syncSeasonEpisodeInputs(seasonInput, episodeInput));
+    seasonInput.addEventListener("change", () => syncSeasonEpisodeInputs(seasonInput, episodeInput));
+    episodeInput.addEventListener("input", () => syncSeasonEpisodeInputs(seasonInput, episodeInput));
+    episodeInput.addEventListener("change", () => syncSeasonEpisodeInputs(seasonInput, episodeInput));
+    panel.querySelector(".isf-play-episode").addEventListener("click", () => {
+      syncSeasonEpisodeInputs(seasonInput, episodeInput);
+      playSelectedEpisode();
     });
 
     panel.querySelectorAll(".isf-type-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         state.mediaType = btn.dataset.type;
         syncTypeUi();
+        state.probeResults = {}; // movie/tv URLs differ
         renderLinks();
+        setStatus(
+          state.mediaType === "tv"
+            ? "TV mode — pick Season & Episode, then Play episode"
+            : "Movie mode"
+        );
       });
     });
 
@@ -489,23 +574,33 @@
       if (state.edgeAutoHide) hidePanelSoon(450);
     });
 
-    // Keep wheel/trackpad scroll inside the panel — never scroll the host page
+    // Keep wheel/trackpad scroll inside the hovered pane — never the host page or the wrong column
     panel.addEventListener(
       "wheel",
       (e) => {
-        e.stopPropagation(); // don't bubble wheel to the page
-        const scrollEl = panel.querySelector(".isf-scroll"); // only the sources area scrolls
-        if (!scrollEl) {
-          e.preventDefault(); // no scroll target → eat the event
-          return;
+        e.stopPropagation();
+        e.preventDefault();
+        // Prefer the pane under the cursor: Latest releases vs Sources
+        const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+        let scrollEl = null;
+        for (const node of path) {
+          if (!node || !node.classList) continue;
+          if (node.classList.contains("isf-releases-list") || node.classList.contains("isf-scroll")) {
+            scrollEl = node;
+            break;
+          }
         }
-        const { scrollTop, scrollHeight, clientHeight } = scrollEl;
-        const maxScroll = Math.max(0, scrollHeight - clientHeight);
-        const next = Math.min(maxScroll, Math.max(0, scrollTop + e.deltaY)); // clamp to list bounds
-        scrollEl.scrollTop = next; // move sources list ourselves
-        e.preventDefault(); // block page scroll even at top/bottom of the list
+        if (!scrollEl) {
+          const overReleases = e.target?.closest?.(".isf-releases");
+          scrollEl = overReleases
+            ? panel.querySelector(".isf-releases-list")
+            : panel.querySelector(".isf-scroll");
+        }
+        if (!scrollEl) return;
+        const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+        scrollEl.scrollTop = Math.min(maxScroll, Math.max(0, scrollEl.scrollTop + e.deltaY));
       },
-      { passive: false } // allow preventDefault on wheel
+      { passive: false }
     );
 
     applyChromeVisibility();
@@ -530,18 +625,277 @@
       panel.hidden = true;
       panel.classList.remove("isf-open", "isf-pinned", "isf-playing");
       panel.classList.add("isf-hidden");
+      applyPageDock(false); // restore full page width when SF is gone
       return;
     }
 
     panel.hidden = false;
-    panel.classList.toggle("isf-pinned", !state.edgeAutoHide);
+    const pinned = !state.edgeAutoHide; // pin = keep open + dock page
+    panel.classList.toggle("isf-pinned", pinned);
     edge.hidden = !state.edgeAutoHide; // tab only when auto-hide mode
     edge.title = state.pendingTitle
       ? `Stream Finder — “${state.pendingTitle.slice(0, 40)}”`
       : "Stream Finder — hover top-left to open";
 
-    if (!state.edgeAutoHide) showPanel();
+    if (pinned) showPanel();
     else hidePanelSoon(0);
+    applyPageDock(pinned); // shrink host page only while pinned
+  }
+
+  function applyPageDock(on) {
+    const root = document.documentElement;
+    if (!on) {
+      root.classList.remove("isf-docked");
+      root.style.removeProperty("--isf-dock-w");
+      return;
+    }
+    const panel = document.getElementById(PANEL_ID);
+    // Match real panel width so the page gutter lines up with SF
+    const w = panel
+      ? Math.round(panel.getBoundingClientRect().width) || Math.round(window.innerWidth * 0.42)
+      : Math.round(window.innerWidth * 0.42);
+    root.style.setProperty("--isf-dock-w", `${w}px`);
+    root.classList.add("isf-docked");
+  }
+
+  function normalizePosterUrl(url) {
+    if (!url) return null;
+    let u = String(url).trim();
+    u = u.replace(/\/ImageRenderer\/\d+\/\d+\//i, "/ImageRenderer/300/450/");
+    return u;
+  }
+
+  async function loadPanelReleases() {
+    const stored = await storageGet(["latestReleases", "latestReleasesAt"]);
+    renderPanelReleases(stored.latestReleases || [], stored.latestReleasesAt);
+    // Auto-fetch once if empty so the right pane isn't blank on first open
+    if (!(stored.latestReleases || []).length && extAlive()) {
+      refreshPanelReleases();
+    }
+  }
+
+  async function refreshPanelReleases() {
+    const meta = document.querySelector(`#${PANEL_ID} .isf-releases-meta`);
+    const btn = document.querySelector(`#${PANEL_ID} .isf-releases-refresh`);
+    if (meta) meta.textContent = "Fetching now-playing…";
+    if (btn) btn.disabled = true;
+    try {
+      if (!extAlive()) throw new Error("extension_reloaded");
+      const res = await chrome.runtime.sendMessage({ type: "refreshReleasesFeed" });
+      const stored = await storageGet(["latestReleases", "latestReleasesAt"]);
+      renderPanelReleases(stored.latestReleases || [], stored.latestReleasesAt);
+      if (!res?.ok && meta) meta.textContent = "Fetch failed — try Refresh again";
+    } catch (_) {
+      if (meta) meta.textContent = "Could not refresh — reload extension / page";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderPanelReleases(items, at) {
+    state._releases = items || [];
+    const list = document.querySelector(`#${PANEL_ID} .isf-releases-list`);
+    const meta = document.querySelector(`#${PANEL_ID} .isf-releases-meta`);
+    if (!list || !meta) return;
+    list.innerHTML = "";
+    if (!items.length) {
+      meta.textContent = "No list yet — click Refresh to load Fandango now-playing.";
+      return;
+    }
+    meta.textContent =
+      `${items.length} now playing` +
+      (at ? ` · ${new Date(at).toLocaleString()}` : "") +
+      " · click → update IMDb page (SF stays open)";
+
+    for (const item of items.slice(0, 48)) {
+      const card = document.createElement("div");
+      card.className = "isf-release-card";
+      card.role = "button";
+      card.tabIndex = 0;
+      card.title = item.title + (item.imdb ? ` (${item.imdb})` : "");
+      card.style.cssText =
+        "display:flex;flex-direction:column;margin:0;padding:0;overflow:hidden;" +
+        "min-height:200px;height:auto;border:1px solid #2e3548;border-radius:8px;background:#12161f;cursor:pointer;";
+
+      const wrap = document.createElement("div");
+      wrap.className = "isf-release-poster-wrap";
+      // Fixed px height + in-flow img (absolute posters were stacking on top of each other)
+      wrap.style.cssText =
+        "display:block;width:100%;height:170px;min-height:170px;max-height:170px;" +
+        "flex:0 0 170px;padding:0;margin:0;background:#1a2030;overflow:hidden;";
+
+      const posterUrl = normalizePosterUrl(item.poster);
+      if (posterUrl) {
+        const img = document.createElement("img");
+        img.className = "isf-release-poster";
+        img.src = posterUrl;
+        img.alt = item.title;
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.style.cssText =
+          "display:block;position:static;width:100%;height:170px;min-height:170px;" +
+          "object-fit:cover;object-position:center top;border:0;margin:0;padding:0;";
+        wrap.appendChild(img);
+      } else {
+        const ph = document.createElement("div");
+        ph.className = "isf-release-poster isf-release-poster--empty";
+        ph.style.cssText = "display:block;width:100%;height:170px;background:linear-gradient(160deg,#1a2030,#0c0e14);";
+        wrap.appendChild(ph);
+      }
+      card.appendChild(wrap);
+
+      const info = document.createElement("div");
+      info.className = "isf-release-meta";
+      info.style.cssText = "display:grid;gap:2px;padding:5px 6px 7px;min-width:0;flex:0 0 auto;";
+      const title = document.createElement("span");
+      title.className = "isf-release-title";
+      title.textContent = item.title;
+      info.appendChild(title);
+      if (item.certified) {
+        const badge = document.createElement("span");
+        badge.className = "isf-release-certified";
+        badge.textContent = item.certified;
+        info.appendChild(badge);
+      } else if (item.released) {
+        const rel = document.createElement("span");
+        rel.className = "isf-release-date";
+        rel.textContent = item.released;
+        info.appendChild(rel);
+      }
+      card.appendChild(info);
+
+      const activate = () => selectReleaseInPanel(item);
+      card.addEventListener("click", activate);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate();
+        }
+      });
+      list.appendChild(card);
+    }
+  }
+
+  async function selectReleaseInPanel(item) {
+    showPanel();
+    setStatus(`Opening IMDb for “${item.title}”…`);
+    let id = item.imdb && /^tt\d{7,8}$/i.test(item.imdb) ? item.imdb.toLowerCase() : null;
+    if (!id && extAlive()) {
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: "resolveReleaseImdb",
+          title: item.title,
+          year: item.year
+        });
+        if (res?.imdb) id = res.imdb;
+      } catch (_) {}
+    }
+    if (!id) {
+      setStatus(`No IMDb id for “${item.title}”`);
+      return;
+    }
+
+    // Keep SF pinned so the dock stays while we swap only the IMDb page content
+    if (state.edgeAutoHide) {
+      state.edgeAutoHide = false;
+      await storageSet({ edgeAutoHide: false });
+    }
+
+    try {
+      await softOpenImdbTitle(id, item.title, { push: true });
+    } catch (err) {
+      // Last resort: full navigation (SF remounts) — only if soft swap failed
+      setStatus("Soft open failed — loading page…");
+      location.assign(`https://www.imdb.com/title/${id}/`);
+    }
+  }
+
+  function isOnImdbHost() {
+    return /(^|\.)imdb\.com$/i.test(location.hostname);
+  }
+
+  // Swap only IMDb’s page tree — Stream Finder nodes on <html> stay mounted
+  async function softOpenImdbTitle(id, titleLabel, { push = true } = {}) {
+    const tt = String(id || "").toLowerCase();
+    if (!/^tt\d{7,8}$/.test(tt)) throw new Error("bad_imdb");
+
+    if (!isOnImdbHost()) {
+      // Must be on IMDb for in-place swap; one hard navigation to get there
+      location.assign(`https://www.imdb.com/title/${tt}/`);
+      return;
+    }
+
+    const path = `/title/${tt}/`;
+    // Already on this title — just sync SF
+    if (location.pathname.replace(/\/$/, "") === path.replace(/\/$/, "")) {
+      await applyTitleToStreamFinder(tt, titleLabel);
+      setStatus(`Already on “${titleLabel || tt}”`);
+      return;
+    }
+
+    setStatus(`Loading “${titleLabel || tt}”…`);
+    const res = await fetch(path, {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "text/html" }
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    const panel = document.getElementById(PANEL_ID);
+    const edge = document.getElementById(EDGE_ID);
+
+    const newNext = doc.getElementById("__next");
+    const oldNext = document.getElementById("__next");
+    if (newNext && oldNext) {
+      const imported = document.importNode(newNext, true);
+      imported.querySelectorAll("script").forEach((s) => s.remove()); // don't re-exec Next bundles
+      oldNext.replaceWith(imported);
+    } else {
+      // Generic fallback: replace body kids except SF chrome
+      const keep = new Set([PANEL_ID, EDGE_ID]);
+      [...document.body.children].forEach((el) => {
+        if (!keep.has(el.id)) el.remove();
+      });
+      [...doc.body.children].forEach((el) => {
+        if (el.tagName === "SCRIPT") return;
+        if (keep.has(el.id)) return;
+        document.body.appendChild(document.importNode(el, true));
+      });
+    }
+
+    // SF must stay on <html> above the page (never lost in a body replace)
+    if (edge) document.documentElement.appendChild(edge);
+    if (panel) document.documentElement.appendChild(panel);
+
+    if (doc.title) document.title = doc.title;
+    if (push) history.pushState({ isfSoft: tt }, document.title, path);
+    else history.replaceState({ isfSoft: tt }, document.title, path);
+    window.scrollTo(0, 0);
+
+    await applyTitleToStreamFinder(tt, titleLabel);
+    setStatus(`“${titleLabel || tt}” — page updated, Stream Finder stayed open`);
+  }
+
+  async function applyTitleToStreamFinder(tt, titleLabel) {
+    state.imdb = tt;
+    state.tmdb = null;
+    state.mediaType = "movie";
+    state.pendingTitle = titleLabel || state.pendingTitle;
+    state.probeResults = {};
+    state.playQueue = [];
+    state.playIndex = -1;
+    state.nowPlayingHref = null;
+    try {
+      closePlayer();
+    } catch (_) {}
+    syncIdInputs();
+    syncTypeUi();
+    applyChromeVisibility();
+    showPanel();
+    await enrichIds();
+    renderLinks();
   }
 
   function bindTitleSelection() {
@@ -692,6 +1046,47 @@
       btn.classList.toggle("isf-active", btn.dataset.type === state.mediaType);
     });
     panel.querySelector(".isf-tv-controls").hidden = state.mediaType !== "tv";
+    const head = panel.querySelector(".isf-links-head");
+    if (head) {
+      head.textContent =
+        state.mediaType === "tv"
+          ? `Sources · S${state.season}E${state.episode}`
+          : "Sources";
+    }
+  }
+
+  function syncSeasonEpisodeInputs(seasonInput, episodeInput) {
+    state.season = Math.max(1, Number(seasonInput.value) || 1);
+    state.episode = Math.max(1, Number(episodeInput.value) || 1);
+    seasonInput.value = state.season;
+    episodeInput.value = state.episode;
+    syncTypeUi();
+    renderLinks(); // refresh source hrefs for the chosen S/E (play happens on the button)
+  }
+
+  async function playSelectedEpisode() {
+    if (state.mediaType !== "tv") {
+      state.mediaType = "tv";
+      syncTypeUi();
+    }
+    const panel = document.getElementById(PANEL_ID);
+    const seasonInput = panel?.querySelector(".isf-season");
+    const episodeInput = panel?.querySelector(".isf-episode");
+    if (seasonInput && episodeInput) syncSeasonEpisodeInputs(seasonInput, episodeInput);
+
+    state.probeResults = {};
+    renderLinks();
+    setStatus(`Loading S${state.season}E${state.episode}…`);
+
+    const candidates = getCandidateLinks();
+    if (!candidates.length) {
+      setStatus("No TV sources — need IMDb/TMDB id and TV mode");
+      return;
+    }
+
+    // Probe + play best for this season/episode
+    await testAllAndPlay();
+    setStatus(`Playing S${state.season}E${state.episode}`);
   }
 
   function syncLockerUi() {
@@ -822,6 +1217,7 @@
     setStatus(`Scanning ${candidates.length} providers (OK / ? / FAIL)…`);
 
     try {
+      if (!extAlive()) throw new Error("extension_reloaded");
       const batch = await chrome.runtime.sendMessage({
         type: "probeEmbedBatch",
         urls: candidates.map((c) => c.href)
@@ -900,7 +1296,10 @@
     }
     const cur = state.playQueue[state.playIndex];
     const label = badgeLabel(state.probeResults[cur.href]);
-    pos.textContent = `${state.playIndex + 1}/${state.playQueue.length} · ${cur.name} (${label})`;
+    pos.textContent =
+      state.mediaType === "tv"
+        ? `${state.playIndex + 1}/${state.playQueue.length} · ${cur.name} · S${state.season}E${state.episode} (${label})`
+        : `${state.playIndex + 1}/${state.playQueue.length} · ${cur.name} (${label})`;
   }
 
   function openPlayer(name, href, opts = {}) {
@@ -918,7 +1317,10 @@
     panel.classList.add("isf-playing");
     state.nowPlayingHref = href;
 
-    title.textContent = `Playing · ${name || "Source"}`;
+    title.textContent =
+      state.mediaType === "tv"
+        ? `Playing · ${name || "Source"} · S${state.season}E${state.episode}`
+        : `Playing · ${name || "Source"}`;
     if (hit) {
       hit.hidden = !!document.fullscreenElement;
       hit.textContent = "Click for fullscreen";
@@ -964,15 +1366,23 @@
     const title =
       panel.querySelector(".isf-player-title")?.textContent?.trim() || "Stream";
     // Open dedicated cast tab — Chromecast cannot hijack cross-origin embeds directly
+    if (!extAlive()) {
+      setStatus("Extension reloaded — refresh this page");
+      return;
+    }
     chrome.runtime.sendMessage({
       type: "openCastTab",
       src,
       title
     }).catch(() => {
-      const url =
-        chrome.runtime.getURL("cast/cast.html") +
-        `?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
+      try {
+        const url =
+          chrome.runtime.getURL("cast/cast.html") +
+          `?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title)}`;
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (_) {
+        setStatus("Extension reloaded — refresh this page");
+      }
     });
     setStatus("Cast tab opened — use Chrome Cast → Cast tab");
   }

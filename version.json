@@ -1,6 +1,6 @@
 {
-  "version": "1.9.2",
-  "notes": "Latest releases poster grid matching Fandango now-playing cards.",
+  "version": "1.10.9",
+  "notes": "TV mode: Play episode button beside Season/Episode runs test-all for that S/E.",
   "repo": "https://github.com/benyamin-persia/imdb-stream-finder",
   "releasesFeed": "https://www.fandango.com/movies-in-theaters"
 }

@@ -19,15 +19,23 @@
   }
 
   chrome.storage.local.get(["lockerEnabled"], (stored) => {
-    enabled = stored.lockerEnabled !== false;
-    publish();
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.lockerEnabled) {
-      enabled = changes.lockerEnabled.newValue !== false;
+    try {
+      if (chrome.runtime.lastError || !chrome.runtime?.id) return;
+      enabled = stored.lockerEnabled !== false;
       publish();
-    }
+    } catch (_) {}
   });
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      try {
+        if (!chrome.runtime?.id) return;
+        if (area === "local" && changes.lockerEnabled) {
+          enabled = changes.lockerEnabled.newValue !== false;
+          publish();
+        }
+      } catch (_) {}
+    });
+  } catch (_) {}
 
   // Keep MAIN locker informed (SPA / late iframes)
   setInterval(publish, 2000);

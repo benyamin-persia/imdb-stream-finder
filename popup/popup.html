@@ -4,7 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>IMDb Stream Finder</title>
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="popup.css?v=1.9.5" />
+    <style>
+      /* Hard lock for Latest releases posters — must stay 2:3 cards, never thin strips */
+      .releases-list {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+        align-items: stretch !important;
+      }
+      .release-card {
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 220px !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
+      .release-poster-wrap {
+        position: relative !important;
+        width: 100% !important;
+        height: 0 !important;
+        padding-top: 150% !important;
+        flex-shrink: 0 !important;
+        background: #1a2030 !important;
+      }
+      .release-poster {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+      }
+    </style>
   </head>
   <body>
     <main>

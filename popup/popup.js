@@ -134,7 +134,10 @@
       if (res?.ok) {
         const stored = await chrome.storage.local.get(["latestReleases", "latestReleasesAt"]);
         renderReleases(stored.latestReleases || [], stored.latestReleasesAt);
-        flash(`Loaded ${res.count} movies in theaters`);
+        flash(
+          `Loaded ${res.count} movies` +
+            (res.linked != null ? ` · ${res.linked} IMDb links` : "")
+        );
       } else {
         flash("Fetch failed — opening Fandango so you can retry");
         await chrome.runtime.sendMessage({ type: "openReleasesFeed" }).catch(() => {});
@@ -205,6 +208,14 @@
     }
   }
 
+  function normalizePosterUrl(url) {
+    if (!url) return null;
+    let u = String(url).trim();
+    // Fandango uses ImageRenderer/200/0/ — force a real 300x450 poster crop
+    u = u.replace(/\/ImageRenderer\/\d+\/\d+\//i, "/ImageRenderer/300/450/");
+    return u;
+  }
+
   function renderReleases(items, at) {
     const list = document.getElementById("releases-list");
     const meta = document.getElementById("releases-meta");
@@ -216,28 +227,53 @@
     meta.textContent =
       `${items.length} now playing` +
       (at ? ` · ${new Date(at).toLocaleString()}` : "") +
-      " · click a poster for IMDb";
+      " · click a poster → its IMDb page";
 
     for (const item of items.slice(0, 48)) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "release-card";
-      btn.title = item.title;
+      const card = document.createElement("a"); // real link card — never <button> (UA squashes imgs)
+      card.className = "release-card";
+      card.href = "#";
+      card.title = item.title;
+      // Inline lock: even if CSS cache is stale, cards stay tall posters not strips
+      card.style.cssText =
+        "display:flex;flex-direction:column;margin:0;padding:0;min-height:220px;" +
+        "border:1px solid #2c3448;border-radius:8px;background:#12161f;overflow:hidden;" +
+        "text-decoration:none;color:#eef1f7;cursor:pointer;box-sizing:border-box;";
 
-      const poster = document.createElement("div");
-      poster.className = "release-poster";
-      if (item.poster) {
-        poster.style.backgroundImage = `url("${item.poster.replace(/"/g, '\\"')}")`;
+      const wrap = document.createElement("div"); // 2:3 frame via padding-top (width-based, can't collapse)
+      wrap.className = "release-poster-wrap";
+      wrap.style.cssText =
+        "position:relative;display:block;width:100%;height:0;padding-top:150%;" +
+        "background:#1a2030;overflow:hidden;flex-shrink:0;";
+
+      const posterUrl = normalizePosterUrl(item.poster);
+      if (posterUrl) {
+        const img = document.createElement("img");
+        img.className = "release-poster";
+        img.src = posterUrl;
+        img.alt = item.title;
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.style.cssText =
+          "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;border:0;";
+        wrap.appendChild(img);
+      } else {
+        const ph = document.createElement("div");
+        ph.className = "release-poster release-poster--empty";
+        ph.style.cssText = "position:absolute;inset:0;background:linear-gradient(160deg,#1a2030,#0c0e14);";
+        wrap.appendChild(ph);
       }
+      card.appendChild(wrap);
 
       const metaInfo = document.createElement("div");
       metaInfo.className = "release-meta";
+      metaInfo.style.cssText = "display:grid;gap:2px;padding:6px 7px 8px;min-width:0;";
 
       const title = document.createElement("span");
       title.className = "release-title";
       title.textContent = item.title;
-
       metaInfo.appendChild(title);
+
       if (item.certified) {
         const badge = document.createElement("span");
         badge.className = "release-certified";
@@ -250,16 +286,35 @@
         metaInfo.appendChild(rel);
       }
 
-      btn.appendChild(poster);
-      btn.appendChild(metaInfo);
-      btn.addEventListener("click", () => {
-        const q = item.imdb || item.title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
-        const url = item.imdb
-          ? `https://www.imdb.com/title/${item.imdb}/`
-          : `https://www.imdb.com/find/?q=${encodeURIComponent(q)}`;
-        chrome.tabs.create({ url });
-      });
-      list.appendChild(btn);
+      card.appendChild(metaInfo);
+
+      if (item.imdb && /^tt\d{7,8}$/i.test(item.imdb)) {
+        card.href = `https://www.imdb.com/title/${item.imdb}/`; // direct title page when already resolved
+      }
+
+      const openImdb = async (e) => {
+        e.preventDefault();
+        let id = item.imdb && /^tt\d{7,8}$/i.test(item.imdb) ? item.imdb.toLowerCase() : null;
+        if (!id) {
+          // Resolve this poster’s IMDb id (never dump the user on a search page)
+          try {
+            const res = await chrome.runtime.sendMessage({
+              type: "resolveReleaseImdb",
+              title: item.title,
+              year: item.year
+            });
+            if (res?.imdb) id = res.imdb;
+          } catch (_) {}
+        }
+        if (!id) {
+          flash("Could not find IMDb page for this title");
+          return;
+        }
+        item.imdb = id; // keep for next click in this popup session
+        chrome.tabs.create({ url: `https://www.imdb.com/title/${id}/` });
+      };
+      card.addEventListener("click", openImdb);
+      list.appendChild(card);
     }
   }
 

@@ -6,10 +6,14 @@
     const posterEl = a.querySelector(".grid-item-poster");
     if (!posterEl) return null;
     const lazy = posterEl.getAttribute("data-fd-lazy-image");
-    if (lazy) return lazy;
-    const bg = posterEl.style?.backgroundImage || "";
-    const m = bg.match(/url\(["']?([^"')]+)["']?\)/i);
-    return m ? m[1] : null;
+    let url = lazy || null;
+    if (!url) {
+      const bg = posterEl.style?.backgroundImage || "";
+      const m = bg.match(/url\(["']?([^"')]+)["']?\)/i);
+      url = m ? m[1] : null;
+    }
+    if (!url) return null;
+    return url.replace(/\/ImageRenderer\/\d+\/\d+\//i, "/ImageRenderer/300/450/");
   }
 
   function scrape() {

@@ -38,11 +38,15 @@ function ensureImdbSearchMenu() {
   });
 }
 
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId !== IMDB_SEARCH_MENU_ID) return;
   const q = String(info.selectionText || "").trim(); // highlighted phrase from any page
   if (!q) return;
-  const url = `https://www.imdb.com/find/?q=${encodeURIComponent(q)}`; // official IMDb find
+  // Prefer the specific title page over a search results dump
+  const imdb = (await resolveImdbId(q, null)) || null;
+  const url = imdb
+    ? `https://www.imdb.com/title/${imdb}/`
+    : `https://www.imdb.com/find/?q=${encodeURIComponent(q)}`;
   chrome.tabs.create({ url });
 });
 
@@ -203,6 +207,7 @@ function parseFandangoReleasesHtml(html, baseUrl) {
       poster = poster
         .replace(/&amp;/g, "&")
         .replace(/\\u0026/g, "&")
+        .replace(/\/ImageRenderer\/\d+\/\d+\//i, "/ImageRenderer/300/450/")
         .trim();
     }
 
@@ -233,6 +238,155 @@ function parseFandangoReleasesHtml(html, baseUrl) {
   return items;
 }
 
+function cleanReleaseTitle(title) {
+  // Strip (2025) / trailing junk so IMDb suggestion matches the movie name
+  return String(title || "")
+    .replace(/\s*\(\d{4}\)\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickImdbSuggestion(results, title, year) {
+  const want = cleanReleaseTitle(title).toLowerCase();
+  const yearNum = year ? Number(year) : null;
+  const list = (results || []).filter((r) => /^tt\d{7,8}$/i.test(r?.id || ""));
+  if (!list.length) return null;
+
+  const score = (r) => {
+    let s = 0;
+    const name = String(r.l || "").toLowerCase();
+    if (name === want) s += 100;
+    else if (name.startsWith(want) || want.startsWith(name)) s += 40;
+    else if (name.includes(want) || want.includes(name)) s += 15;
+    const qid = String(r.qid || r.q || "").toLowerCase();
+    if (qid === "movie" || qid === "feature") s += 30; // prefer theatrical movies
+    if (qid === "tvseries" || qid === "tv") s -= 40;
+    if (yearNum && Number(r.y) === yearNum) s += 50; // year from Fandango title wins ties
+    if (yearNum && r.y && Math.abs(Number(r.y) - yearNum) <= 1) s += 10;
+    return s;
+  };
+
+  list.sort((a, b) => score(b) - score(a));
+  return list[0].id.toLowerCase();
+}
+
+async function resolveImdbId(title, year) {
+  const q = cleanReleaseTitle(title);
+  if (!q) return null;
+  if (/^tt\d{7,8}$/i.test(q)) return q.toLowerCase();
+  const first = q[0].toLowerCase();
+  const pathChar = /[a-z0-9]/.test(first) ? first : "_"; // IMDb uses "_" for non-alnum
+  const url =
+    `https://v2.sg.media-imdb.com/suggestion/${pathChar}/` +
+    `${encodeURIComponent(q)}.json`;
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return pickImdbSuggestion(data?.d, title, year);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function enrichReleasesWithImdb(items) {
+  const out = Array.isArray(items) ? items.slice() : [];
+  const CONCURRENCY = 6; // resolve several at once without hammering IMDb
+  let i = 0;
+  async function worker() {
+    while (i < out.length) {
+      const idx = i++;
+      const item = out[idx];
+      if (item?.imdb && /^tt\d{7,8}$/i.test(item.imdb)) continue;
+      const id = await resolveImdbId(item.title, item.year);
+      if (id) out[idx] = { ...item, imdb: id };
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  return out;
+}
+
+// Indian / South Asian theatrical titles — user does not want these in Latest releases
+const INDIAN_LANG_HINT =
+  /\b(bollywood|tollywood|kollywood|sandalwood|mollywood|hindi|tamil|telugu|malayalam|kannada|punjabi|marathi|bengali|gujarati|bhojpuri|indian\s+film)\b/i;
+const DEVANAGARI_RE = /[\u0900-\u097F]/; // Hindi etc. in the title
+const INDIAN_ORIGIN_Q = "Q668"; // Wikidata India
+const INDIAN_LANG_Q = new Set([
+  "Q1568", // Hindi
+  "Q5885", // Tamil
+  "Q8097", // Telugu
+  "Q36236", // Malayalam
+  "Q3368", // Kannada
+  "Q9610", // Bengali
+  "Q1571", // Marathi
+  "Q58635", // Punjabi
+  "Q5137", // Gujarati
+  "Q33265" // Bhojpuri
+]);
+
+function looksIndianFromText(item) {
+  const blob = `${item?.title || ""} ${item?.href || ""} ${item?.certified || ""}`;
+  if (DEVANAGARI_RE.test(blob)) return true;
+  if (INDIAN_LANG_HINT.test(blob)) return true;
+  return false;
+}
+
+async function isIndianViaWikidata(imdb) {
+  if (!imdb || !/^tt\d{7,8}$/i.test(imdb)) return false;
+  const sparql = `
+    SELECT ?country ?lang WHERE {
+      ?item wdt:P345 "${imdb.toLowerCase()}".
+      OPTIONAL { ?item wdt:P495 ?country. }
+      OPTIONAL { ?item wdt:P364 ?lang. }
+    } LIMIT 8`.trim();
+  try {
+    const url =
+      "https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(sparql);
+    const res = await fetch(url, {
+      headers: { Accept: "application/sparql-results+json" },
+      cache: "no-store"
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const rows = data?.results?.bindings || [];
+    for (const row of rows) {
+      const c = String(row.country?.value || "");
+      const l = String(row.lang?.value || "");
+      if (c.endsWith("/" + INDIAN_ORIGIN_Q) || c.endsWith(INDIAN_ORIGIN_Q)) return true;
+      const langId = l.split("/").pop();
+      if (langId && INDIAN_LANG_Q.has(langId)) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+async function filterOutIndianReleases(items) {
+  const list = Array.isArray(items) ? items : [];
+  const drop = new Array(list.length).fill(false);
+  const CONCURRENCY = 4;
+  let i = 0;
+  async function worker() {
+    while (i < list.length) {
+      const idx = i++;
+      const item = list[idx];
+      if (!item) {
+        drop[idx] = true;
+        continue;
+      }
+      if (looksIndianFromText(item)) {
+        drop[idx] = true;
+        continue;
+      }
+      if (item.imdb && (await isIndianViaWikidata(item.imdb))) drop[idx] = true;
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  return list.filter((_, n) => !drop[n]);
+}
+
 async function refreshReleasesFeed(reason) {
   const stored = await chrome.storage.local.get(["releasesFeedUrl"]);
   let url = stored.releasesFeedUrl || DEFAULT_RELEASES_FEED;
@@ -248,8 +402,10 @@ async function refreshReleasesFeed(reason) {
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const html = await res.text();
-    const items = parseFandangoReleasesHtml(html, url);
+    let items = parseFandangoReleasesHtml(html, url);
     if (!items.length) throw new Error("no_titles_parsed");
+    items = await enrichReleasesWithImdb(items); // attach tt##### so poster clicks open the title page
+    items = await filterOutIndianReleases(items); // drop India / Hindi / Tamil / … titles
     await chrome.storage.local.set({
       latestReleases: items,
       latestReleasesAt: Date.now(),
@@ -257,7 +413,8 @@ async function refreshReleasesFeed(reason) {
       releasesFeedUrl: url,
       lastReleasesRefreshReason: reason
     });
-    return { ok: true, count: items.length, url };
+    const linked = items.filter((x) => x.imdb).length;
+    return { ok: true, count: items.length, linked, url };
   } catch (err) {
     console.warn("[Stream Finder] releases refresh failed:", err);
     return { ok: false, error: String(err?.message || err), url };
@@ -470,8 +627,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     refreshReleasesFeed("manual").then(sendResponse);
     return true;
   }
+  if (msg?.type === "resolveReleaseImdb") {
+    // On-demand: popup click when cached item still has imdb:null
+    resolveImdbId(msg.title, msg.year).then((imdb) => sendResponse({ ok: !!imdb, imdb }));
+    return true;
+  }
   if (msg?.type === "releasesScraped") {
-    // Optional badge pulse when a fresh list arrives
+    // Scrape path also left imdb null — resolve tt ids, drop Indian titles, then badge pulse
+    chrome.storage.local.get(["latestReleases"]).then(async (s) => {
+      let enriched = await enrichReleasesWithImdb(s.latestReleases || []);
+      enriched = await filterOutIndianReleases(enriched);
+      await chrome.storage.local.set({ latestReleases: enriched });
+    });
     chrome.action.setBadgeText({ text: "TV" }).catch(() => {});
     setTimeout(() => {
       chrome.storage.local.get(["updateAvailable"]).then((s) => {
